@@ -16,18 +16,16 @@
      along with fEMR.  If not, see <http://www.gnu.org/licenses/>. If
      you have any questions, contact <info@teamfemr.org>.
 */
-package femr.ui.models.admin.inventory;
+package femr.util.dependencyinjection.providers;
 
-public class ManageViewModelPost {
-    private Integer selectedTrip;
+import com.google.inject.Provider;
+import femr.data.models.core.IBurnRate;
+import femr.data.models.mysql.BurnRate;
 
-    public Integer getSelectedTrip() {
-        return selectedTrip;
+
+public class BurnRateProvider implements Provider<IBurnRate> {
+    @Override
+    public IBurnRate get() {
+        return new BurnRate();
     }
-
-    public void setSelectedTrip(Integer selectedTrip) {
-        this.selectedTrip = selectedTrip;
-    }
-
-
 }

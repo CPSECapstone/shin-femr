@@ -18,10 +18,15 @@
 */
 package femr.business.services.core;
 
+import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.MedicationItem;
+import femr.common.models.ShoppingListExportItem;
+import femr.data.models.core.IBurnRate;
+import org.joda.time.DateTime;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Inventory service is responsible for maintaining and tracking the medication inventory for a team.
@@ -82,14 +87,14 @@ public interface IInventoryService {
     ServiceResponse<Boolean> existsInventoryMedicationInTrip(int medicationId, int tripId);
 
     /**
-     * Adds a new medication to the trip inventory if it is not yet there,
+     * Adds or updated a medication in the trip inventory,
      * or undoes the soft delete of a medication already added to a trip inventory
      *
      * @param medicationId id of the medication
      * @param tripId id of the trip that will contain or contains the medication.
      * @return a medication item that contains quantity information.
      */
-    ServiceResponse<MedicationItem> createMedicationInventory(int medicationId, int tripId);
+    ServiceResponse<MedicationItem> createOrUpdateMedicationInventory(int medicationId, int tripId, int quantityCurrent, DateTime timeAdded, String createdBy);
 
     /**
      * Deletes (soft-deletes) inventory medication by medication/tripId.
@@ -130,4 +135,34 @@ public interface IInventoryService {
      */
     ServiceResponse<String> exportCSV(int tripId);
 
+    /**
+     * Returns a string containing CSV data with the shopping list for the provided trip and desired weeks on hand
+     *
+     * @param tripId id of the trip
+     * @param desiredWeeksOnHand number of desired weeks on hand
+     * @return a string containing the shopping list for the provided trip and desired weeks on hand in CSV form
+     */
+    ServiceResponse<String> exportShoppingListCSV(int tripId, int desiredWeeksOnHand);
+
+    /**
+     * Returns a string containing CSV import data with the current inventory for the provided trip
+     *
+     * @param tripId id of the trip
+     * @param file user csv file
+     * @return a string containing the new updated inventory list for the trip
+     */
+
+    ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser);
+
+    IBurnRate callPredictor(int medId,int tripId);
+
+    /**
+     * Returns a list containing shopping list items for the provided trip and desired weeks on hand
+     *
+     * @param tripId id of the trip
+     * @param desiredWeeksOnHand number of desired weeks on hand
+     * @return a list containing shopping list items for the provided trip and desired weeks on hand
+     */
+    List<ShoppingListExportItem> createShoppingList(int tripId, int desiredWeeksOnHand);
+    public int getRequiredQuantity(int medId,int weeksCount);
 }

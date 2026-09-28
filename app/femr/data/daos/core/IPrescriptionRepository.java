@@ -4,6 +4,7 @@ import femr.data.models.core.IConceptPrescriptionAdministration;
 import femr.data.models.core.IPatientPrescription;
 import femr.data.models.core.IPatientPrescriptionReplacement;
 import femr.data.models.core.IPatientPrescriptionReplacementReason;
+import org.joda.time.DateTime;
 
 import java.util.List;
 
@@ -85,4 +86,14 @@ public interface IPrescriptionRepository {
      * @return the updated patient prescription object, may be null
      */
     IPatientPrescription updatePrescription(IPatientPrescription patientPrescription);
+
+    /**
+     * Retrieves all  prescriptions by medication ID.
+     *
+     * @param med_id id of the medication, not null
+     * @param startDT date time that the prescriptions must be greater than
+     * @param endDT date time that the prescriptions must be less than
+     * @return a list of  prescriptions, not null
+     */
+    public List<? extends IPatientPrescription> retrieveAllPrescriptionsByMedicationId(int med_id, DateTime startDT, DateTime endDT);
 }
