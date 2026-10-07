@@ -336,22 +336,27 @@ public class InventoryService implements IInventoryService {
 
     @Override
     public ServiceResponse<String> exportCSV(int tripId) {
-        callPredictor(1,1);
+
+
         List<? extends IMedicationInventory> medicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+
+
         // Convert result of query to a list to export
         List<InventoryExportItem> inventoryExport = new ArrayList<>();
         for (IMedicationInventory med : medicationInventory) {
 
+
             String name;
-            if (med.getCreatedBy() == null) {
+            if(med.getCreatedBy() == null) {
                 name = "";
             } else {
                 IUser user = userRepository.retrieveUserById(med.getCreatedBy());
                 name = user.getLastName() + ", " + user.getFirstName();
             }
 
+
             String timeStamp;
-            if (med.getTimeAdded() == null) {
+            if(med.getTimeAdded() == null) {
                 timeStamp = "";
             } else {
                 timeStamp = dateUtils.convertTimeToString(med.getTimeAdded());
@@ -361,20 +366,25 @@ public class InventoryService implements IInventoryService {
                     timeStamp, name)));
         }
 
+
         // Convert export list to json
         Gson gson = new Gson();
         GsonFlattener parser = new GsonFlattener();
         List<Map<String, String>> flatJson = parser.parse(gson.toJsonTree(inventoryExport).getAsJsonArray());
 
+
         // Convert json to CSV
         CSVWriterGson writer = new CSVWriterGson();
         String csvString = writer.getAsCSV(flatJson, InventoryExportItem.getFieldOrder());
 
+
         ServiceResponse<String> response = new ServiceResponse<>();
         response.setResponseObject(csvString.toString());
 
+
         return response;
     }
+
 
 
     /**
