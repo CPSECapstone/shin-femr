@@ -436,7 +436,9 @@ public class InventoryController extends Controller {
         } else {
             System.out.println("CSV import failed: "
                     + importServiceResponse.getErrors());
-            flash("error", String.join(" ", importServiceResponse.getErrors().values()));
+            String validationMessage = importServiceResponse.getErrors().get("csvValidation");
+            flash("error", validationMessage != null ? validationMessage
+                    : String.join(" ", importServiceResponse.getErrors().values()));
             return redirect("/admin/inventory/" + tripId);
         }
     }

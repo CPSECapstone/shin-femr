@@ -410,6 +410,18 @@ public class InventoryService implements IInventoryService {
             if ("Medication,Quantity".equals(header)) {
                 return importMedicationQuantityCSV(tripId, file, currentUser);
             }
+            List<String> headerColumns;
+            try {
+                headerColumns = header == null ? null : parseCsvLine(header);
+            } catch (IllegalArgumentException ex) {
+                response.addError("csvValidation", "CSV headers could not be read. Check the column names and quotation marks.");
+                return response;
+            }
+            if (headerColumns != null && !headerColumns.equals(InventoryExportItem.getFieldOrder())) {
+                response.addError("csvValidation", "CSV headers do not match. Expected: Medication,Quantity. "
+                        + "For exported inventory files, keep the original six column headers.");
+                return response;
+            }
             return importExportedInventoryCSV(tripId, file);
         } catch (IOException ex) {
             response.addError("file", "Could not read the inventory file.");
@@ -419,14 +431,35 @@ public class InventoryService implements IInventoryService {
 
     private ServiceResponse<String> importMedicationQuantityCSV(int tripId, Object file, CurrentUser currentUser) {
         ServiceResponse<String> response = new ServiceResponse<>();
-        List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
         Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
-        String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
         File myObj = (File) file;
 
-        try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
+        try (java.io.BufferedReader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
+            reader.mark(1);
+            if (reader.read() != '\uFEFF') reader.reset();
             String[] expectedHeaders = new String[] {"Medication", "Quantity"};
             List<CSVRecord> records = CSVParser.parse(reader, expectedHeaders);
+
+            // Validate every row before creating or updating medication inventory.
+            for (CSVRecord record : records) {
+                long rowNumber = record.getRecordNumber() + 1; // Include the header row.
+                if (!record.isSet("Medication") || !record.isSet("Quantity")
+                        || record.get("Medication").isEmpty() || record.get("Quantity").isEmpty()) {
+                    response.addError("csvValidation", "Row " + rowNumber
+                            + " is missing a medication or quantity. Each row must contain both columns and values.");
+                    return response;
+                }
+                try {
+                    Integer.parseInt(record.get("Quantity"));
+                } catch (NumberFormatException ex) {
+                    response.addError("csvValidation", "Row " + rowNumber
+                            + " has an invalid quantity. Enter a whole number within the supported range.");
+                    return response;
+                }
+            }
+            List<? extends IMedicationInventory> existentMedicationInventory =
+                    medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+            String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
 
             for (IMedicationInventory med : existentMedicationInventory) {
                 MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
