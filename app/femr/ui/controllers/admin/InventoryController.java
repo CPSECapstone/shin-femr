@@ -32,6 +32,7 @@ import femr.ui.models.admin.inventory.*;
 import femr.ui.views.html.admin.inventory.custom;
 import femr.ui.views.html.admin.inventory.existing;
 import femr.ui.views.html.admin.inventory.manage;
+import femr.util.stringhelpers.FormularyCsvTemplate;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
@@ -438,6 +439,14 @@ public class InventoryController extends Controller {
             flash("error", String.join(" ", importServiceResponse.getErrors().values()));
             return redirect("/admin/inventory/" + tripId);
         }
+    }
+
+    /**
+     * Downloads a starter file whose columns match the formulary CSV importer.
+     */
+    public Result downloadTemplateGet() {
+        response().setHeader("Content-disposition", "attachment; filename=formulary-template.csv");
+        return ok(FormularyCsvTemplate.getCsv()).as("text/csv");
     }
 
     /**

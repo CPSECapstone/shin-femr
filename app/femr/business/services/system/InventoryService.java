@@ -534,6 +534,36 @@ public class InventoryService implements IInventoryService {
         return response;
     }
 
+    /** Parses one RFC 4180-style CSV record, including quoted commas and quotes. */
+    private List<String> parseCsvLine(String line) {
+        List<String> values = new ArrayList<>();
+        StringBuilder value = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int index = 0; index < line.length(); index++) {
+            char character = line.charAt(index);
+            if (character == '"') {
+                if (inQuotes && index + 1 < line.length() && line.charAt(index + 1) == '"') {
+                    value.append('"');
+                    index++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (character == ',' && !inQuotes) {
+                values.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(character);
+            }
+        }
+
+        if (inQuotes) {
+            throw new IllegalArgumentException("CSV row has an unclosed quoted value.");
+        }
+        values.add(value.toString());
+        return values;
+    }
+
     public int sum(int[] arr){
         return Arrays.stream(arr).sum();
     }
