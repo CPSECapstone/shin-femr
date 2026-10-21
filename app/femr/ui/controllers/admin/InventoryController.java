@@ -426,8 +426,9 @@ public class InventoryController extends Controller {
         } else {
             System.out.println("CSV import failed: "
                     + importServiceResponse.getErrors());
-            flash("error",
-                    "The CSV could not be imported. Check its column headers and values, then try again.");
+            String validationMessage = importServiceResponse.getErrors().get("csvValidation");
+            flash("error", validationMessage != null ? validationMessage
+                    : "The CSV could not be imported. Check its column headers and values, then try again.");
             return redirect("/admin/inventory/" + tripId);
         }
     }

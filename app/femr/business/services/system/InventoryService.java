@@ -397,21 +397,34 @@ public class InventoryService implements IInventoryService {
         ServiceResponse<String> response = new ServiceResponse<>();
         List<InventoryExportItem> newMedicationInventory = new ArrayList<>();
         List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
-        try {
-            File myObj = (File) file;
-            Scanner myReader = new Scanner(myObj);
+        try (Scanner myReader = new Scanner((File) file)) {
             Pattern pattern = Pattern.compile(",");
             if (myReader.hasNextLine()) {
                 String data = myReader.nextLine();
-                String[] items = pattern.split(data);
-                if (!items[0].equals("Medication") || !items[1].equals("Quantity")) {
-                    response.addError("", "CSV file header is not valid ...");
+                String[] items = pattern.split(data, -1);
+                if (items.length < 2 || !items[0].equals("Medication") || !items[1].equals("Quantity")) {
+                    response.addError("csvValidation", "CSV headers do not match. Expected: Medication,Quantity.");
                     return response;
                 }
             }
+            int rowNumber = 1;
             while (myReader.hasNextLine()) {
+                rowNumber++;
                 String data = myReader.nextLine();
-                String[] items = pattern.split(data);
+                String[] items = pattern.split(data, -1);
+                if (items.length < 2 || items[0].trim().isEmpty() || items[1].trim().isEmpty()) {
+                    response.addError("csvValidation", "Row " + rowNumber
+                            + " is missing a medication or quantity. Each row must contain both columns and values.");
+                    return response;
+                }
+                final int quantity;
+                try {
+                    quantity = Integer.parseInt(items[1]);
+                } catch (NumberFormatException ex) {
+                    response.addError("csvValidation", "Row " + rowNumber
+                            + " has an invalid quantity. Enter a whole number within the supported range.");
+                    return response;
+                }
                 String name;
                 name = currentUser.getLastName() + ", " + currentUser.getFirstName();
                 boolean medExists = false;
@@ -435,14 +448,14 @@ public class InventoryService implements IInventoryService {
                     medicationItemServiceResponse = createOrUpdateMedicationInventory(
                             newMedication.getMedication().getId(),
                             tripId,
-                            Integer.parseInt(items[1]),
-                            Integer.parseInt(items[1]) == 0 ?
+                            quantity,
+                            quantity == 0 ?
                                     newMedication.getTimeAdded() :
                                     DateTime.now(), name);
                     if (!medicationItemServiceResponse.hasErrors()) {
                         finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
                                 newMedication.getMedication(), newMedication.getQuantityCurrent(), newMedication.getQuantityInitial(), newMedication.getIsDeleted(),
-                                Integer.parseInt(items[1]) == 0 ?
+                                quantity == 0 ?
                                         newMedication.getTimeAdded().toString() :
                                         DateTime.now().toString(), name));
                     } else {
@@ -456,11 +469,11 @@ public class InventoryService implements IInventoryService {
                     medicationItemServiceResponse = createOrUpdateMedicationInventory(
                             medication.getId(),
                             tripId,
-                            Integer.parseInt(items[1]),
+                            quantity,
                             DateTime.now(), name);
                     if (true) {
                         finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
-                                medication, Integer.parseInt(items[1]), Integer.parseInt(items[1]), null,
+                                medication, quantity, quantity, null,
                                 DateTime.now().toString(), name));
                     } else {
                         response.addError("", String.valueOf(medicationItemServiceResponse.getErrors().values()));
@@ -472,7 +485,6 @@ public class InventoryService implements IInventoryService {
 
 
             }
-            myReader.close();
             List<InventoryExportItem> newMedicationInventoryHelper = new ArrayList<>();
             for (IMedicationInventory med : existentMedicationInventory) {
                 for (InventoryExportItem newMed : newMedicationInventory) {
