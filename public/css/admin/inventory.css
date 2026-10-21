@@ -181,6 +181,25 @@
   width: 120px;
 }
 
+.fExportShoppingListCSVButton {
+    cursor: not-allowed;
+}
+
+.fExportShoppingListCSVButton a {
+    padding: 2px 5px 2px 5px;
+    width: 150px;
+}
+
+.fImportCSVButton {
+    cursor: not-allowed;
+    /*border: 15px solid #ccc;*/
+}
+
+.fImportCSVButton a {
+    padding: 2px 5px 2px 5px;
+    width: 120px;
+    /*border: 1px solid #ccc;*/
+}
 #currentMedicationHeader {
   margin-bottom: 5px;
 }

@@ -13,6 +13,7 @@ import femr.data.models.mysql.PatientPrescriptionReplacementReason;
 import femr.data.models.mysql.concepts.ConceptPrescriptionAdministration;
 import io.ebean.Ebean;
 import io.ebean.ExpressionList;
+import org.joda.time.DateTime;
 import play.Logger;
 
 import java.util.List;
@@ -191,4 +192,26 @@ public class          PrescriptionRepository implements IPrescriptionRepository 
 
         return patientPrescription;
     }
+
+    @Override
+    public List<? extends IPatientPrescription> retrieveAllPrescriptionsByMedicationId(int med_id, DateTime startDT, DateTime endDT) {
+        List<? extends IPatientPrescription> patientPrescriptions;
+        try {
+            ExpressionList<PatientPrescription> query = QueryProvider.getPatientPrescriptionQuery()
+
+                    .where()
+
+                    .eq("medication_id", med_id).gt("date_taken", startDT).lt("date_taken", endDT);
+
+
+            patientPrescriptions = query.findList();
+        } catch (Exception ex) {
+
+            Logger.error("PrescriptionRepository-retrieveAllPrescriptionsByMedicationId", ex.getMessage());
+            throw ex;
+        }
+
+        return patientPrescriptions;
+    }
+
 }

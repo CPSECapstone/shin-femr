@@ -23,24 +23,28 @@ import controllers.AssetsFinder;
 import femr.business.services.core.*;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
+import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
 import femr.data.models.mysql.Roles;
 import femr.ui.helpers.security.AllowedRoles;
 import femr.ui.helpers.security.FEMRAuthenticated;
 import femr.ui.models.admin.inventory.*;
-import femr.common.models.MedicationItem;
-import femr.ui.views.html.admin.inventory.*;
+import femr.ui.views.html.admin.inventory.custom;
+import femr.ui.views.html.admin.inventory.existing;
+import femr.ui.views.html.admin.inventory.manage;
+import femr.util.stringhelpers.FormularyCsvTemplate;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
 import play.mvc.Controller;
+import play.mvc.Http;
 import play.mvc.Result;
 import play.mvc.Security;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 @Security.Authenticated(FEMRAuthenticated.class)
 @AllowedRoles({Roles.ADMINISTRATOR, Roles.SUPERUSER})
@@ -140,7 +144,6 @@ public class InventoryController extends Controller {
 
         final Form<ManageViewModelPost> manageViewModelForm = formFactory.form(ManageViewModelPost.class);
         ManageViewModelPost viewModel = manageViewModelForm.bindFromRequest().get();
-
         return redirect("/admin/inventory/" + viewModel.getSelectedTrip());
     }
     /**
@@ -256,7 +259,7 @@ public class InventoryController extends Controller {
             if (doesInventoryExistInTrip.getResponseObject()){
                 createMedicationInventoryServiceResponse = inventoryService.reAddInventoryMedication(medicationId, tripId);
             } else {
-                createMedicationInventoryServiceResponse = inventoryService.createMedicationInventory(medicationId, tripId);
+                createMedicationInventoryServiceResponse = inventoryService.createOrUpdateMedicationInventory(medicationId, tripId,0,null,null);
             }
             //sets initial total quantity
             ServiceResponse<MedicationItem> setQuantityTotalServiceResponse =
@@ -266,12 +269,12 @@ public class InventoryController extends Controller {
                     inventoryService.setQuantityCurrent(medicationId, tripId, quantity);
 
 
+
             if (createMedicationInventoryServiceResponse.hasErrors() || setQuantityTotalServiceResponse.hasErrors()) {
 
                 return internalServerError();
             }
         }
-
 
         return redirect("/admin/inventory/"+tripId);
     }
@@ -351,7 +354,7 @@ public class InventoryController extends Controller {
                         if(inventoryService.existsInventoryMedicationInTrip(medicationItemServiceResponse.getResponseObject().getId(),tripId).getResponseObject()){
                             createOrReAddInventoryResponse = inventoryService.reAddInventoryMedication(medicationItemServiceResponse.getResponseObject().getId(), tripId);
                         } else {
-                            createOrReAddInventoryResponse = inventoryService.createMedicationInventory(medicationItemServiceResponse.getResponseObject().getId(), tripId);
+                            createOrReAddInventoryResponse = inventoryService.createOrUpdateMedicationInventory(medicationItemServiceResponse.getResponseObject().getId(), tripId,0,null,null);
                         }
 
                         if (createOrReAddInventoryResponse.hasErrors()) {
@@ -370,6 +373,7 @@ public class InventoryController extends Controller {
 
     /**
      * Called when a user wants to export the data to a CSV file.
+     * On Inventory page, clicking on the button 'Export as CSV' calls this method.
      * @param tripId export inventory for trip with this ID - defaults to user's current
      *               trip if they do not select another trip
      * @return inventory CSV file
@@ -377,18 +381,103 @@ public class InventoryController extends Controller {
     public Result exportGet(int tripId) {
 
       ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
+      if (exportServiceResponse.hasErrors()) {
+          flash("error", "The inventory file could not be exported.");
+          return redirect("/admin/inventory/" + tripId);
+      }
 
       SimpleDateFormat format = new SimpleDateFormat("MMddyy-HHmmss");
       String timestamp = format.format(new Date());
       String csvFileName = "inventory-"+timestamp+".csv";
       response().setHeader("Content-disposition", "attachment; filename=" + csvFileName);
 
-      return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
+      return ok(exportServiceResponse.getResponseObject()).as("text/csv; charset=utf-8");
+    }
+
+
+
+    /**
+     * Called when a user wants to import some data from a CSV file.
+     * @param tripId import inventory for trip with this ID - defaults to user's current
+     *               trip if they do not select another trip
+     * @return Result of importing
+     */
+    public Result importCSV(int tripId) {
+
+        Http.MultipartFormData formData = request().body().asMultipartFormData();
+
+        if (formData == null || formData.getFiles().isEmpty()) {
+            System.out.println("CSV import failed: no file was uploaded.");
+            flash("error", "Please choose a CSV file to upload.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
+        // ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
+        Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
+
+        if (uploadedFile.getFilename() == null
+                || uploadedFile.getFilename().trim().isEmpty()) {
+            System.out.println("CSV import failed: no file was selected.");
+            flash("error", "Please choose a CSV file to upload.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
+        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
+
+        if (!uploadedFile.getFilename().toLowerCase(java.util.Locale.ROOT).endsWith(".csv")) {
+            flash("error", "Choose a comma-delimited .csv inventory file.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
+        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
+
+        if (!importServiceResponse.hasErrors()) {
+            return redirect("/admin/inventory/" + tripId);
+        } else {
+            System.out.println("CSV import failed: "
+                    + importServiceResponse.getErrors());
+            flash("error", String.join(" ", importServiceResponse.getErrors().values()));
+            return redirect("/admin/inventory/" + tripId);
+        }
+    }
+
+    /**
+     * Downloads a starter file whose columns match the formulary CSV importer.
+     */
+    public Result downloadTemplateGet() {
+        response().setHeader("Content-disposition", "attachment; filename=formulary-template.csv");
+        return ok(FormularyCsvTemplate.getCsv()).as("text/csv");
+    }
+
+    /**
+     * Called when a user wants to export shopping list to a CSV file.
+     * @param tripId export inventory for trip with this ID
+     * @return shopping list CSV file
+     */
+    public Result exportShoppingListGet(int tripId) {
+
+        final Form<ShoppingListViewModelPost> manageViewModelForm = formFactory.form(ShoppingListViewModelPost.class);
+        ShoppingListViewModelPost viewModel = manageViewModelForm.bindFromRequest().get();
+
+        ServiceResponse<String> exportServiceResponse = inventoryService.exportShoppingListCSV(tripId, viewModel.getWeeksOnHand());
+
+        if (!exportServiceResponse.hasErrors()) {
+
+            SimpleDateFormat format = new SimpleDateFormat("MMddyy-HHmmss");
+            String timestamp = format.format(new Date());
+            String csvFileName = "shopping-list-" + timestamp + ".csv";
+            response().setHeader("Content-disposition", "attachment; filename=" + csvFileName);
+
+            return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
+
+        }
+
+        return internalServerError();
     }
 
     /**
      * Called when a user hits the remove button to remove a medication from the trip formulary.
-     * @param medicationID
+     * @param medicationId
      * @param tripId
      * @return Result of soft-deletion
      */

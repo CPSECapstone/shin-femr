@@ -168,4 +168,6 @@ public class QueryProvider {
     }
 
     public static Query<LanguageCode> getLanguage() {return Ebean.find(LanguageCode.class);}
+
+    public static Query<BurnRate> getBurnRateQuery(){return Ebean.find(BurnRate.class);}
 }

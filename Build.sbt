@@ -21,6 +21,7 @@ val appDependencies = Seq(
   "org.mindrot" % "jbcrypt" % "0.3m",
   "org.apache.commons" % "commons-collections4" % "4.0",
   "org.apache.commons" % "commons-text" % "1.3",
+  "org.apache.commons" % "commons-csv" % "1.10.0",
   "org.mockito" % "mockito-inline" % "3.5.13",
   "com.google.code.gson" % "gson" % "2.3.1",
   "com.itextpdf" % "itextpdf" % "5.5.6",
@@ -28,7 +29,8 @@ val appDependencies = Seq(
   "com.h2database" % "h2" % "1.4.193",
   "com.jcraft" % "jsch" % "0.1.54",
   "ca.uhn.hapi.fhir" % "hapi-fhir-base" % "5.7.0",
-  "ca.uhn.hapi.fhir" % "hapi-fhir-structures-r5" % "5.7.0"
+  "ca.uhn.hapi.fhir" % "hapi-fhir-structures-r5" % "5.7.0",
+  "org.ejml" % "ejml-all" % "0.38"
 )
 
 

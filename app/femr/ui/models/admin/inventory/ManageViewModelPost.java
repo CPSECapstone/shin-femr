@@ -18,11 +18,6 @@
 */
 package femr.ui.models.admin.inventory;
 
-import femr.common.models.MedicationItem;
-import femr.common.models.MissionTripItem;
-
-import java.util.List;
-
 public class ManageViewModelPost {
     private Integer selectedTrip;
 
@@ -33,4 +28,6 @@ public class ManageViewModelPost {
     public void setSelectedTrip(Integer selectedTrip) {
         this.selectedTrip = selectedTrip;
     }
+
+
 }

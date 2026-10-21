@@ -7,8 +7,10 @@
 @import femr.ui.views.html.layouts.admin
 
     @additionalStyles = {
+
         <link rel="stylesheet" href="@assets.path("css/libraries/select2.min.css")">
         <link rel="stylesheet" href="@assets.path("css/libraries/jquery.dataTables.min.css")">
+        <link rel="stylesheet" href="@assets.path("css/admin/inventory.css")">
     }
     @additionalScripts = {
 
@@ -92,6 +94,12 @@
 
     @inventoryMenu(viewModel.getMissionTripItem)
 
+    @if(flash.containsKey("error")) {
+        <div class="alert alert-danger" role="alert">
+            @flash.get("error")
+        </div>
+    }
+
     @if(currentUser.getTripId != null && viewModel.getMissionTripItem != null) {
 
         <section class="admin-section">
@@ -129,15 +137,43 @@
                     <h2 class="admin-section__title" id="inv_manage_formulary_title">Current formulary</h2>
                     <p class="admin-section__description" id="inv_manage_formulary_desc">Adjust quantities as medications are dispensed in pharmacy.</p>
                 </div>
-                <div class="admin-section__actions">
+                <div class="admin-section__actions" style="display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;">
+
+                    @* Shopping list: form with a weeks input *@
+                    @helper.form(action = InventoryController.exportShoppingListGet(viewModel.getMissionTripItem.getId), Symbol("class") -> "admin-form admin-form--inline", Symbol("style") -> "display: flex; flex-direction: row; align-items: center; gap: 0.5rem; margin: 0;") {
+                        <label for="weeksOnHandInventory" id="inv_manage_weeks_label">Desired weeks</label>
+                        <input type="number" id="weeksOnHandInventory" name="weeksOnHand" value="1" min="0" max="100" step="1" />
+                        <button type="submit" class="admin-button admin-button--secondary" style="flex: 1;">
+                            <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+                            <span id="inv_manage_export_shopping_btn">Export shopping list</span>
+                        </button>
+                    }
+
                     <a class="admin-button admin-button--secondary" href="@InventoryController.exportGet(viewModel.getMissionTripItem.getId).url">
                         <span class="material-symbols-outlined" aria-hidden="true">download</span>
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
+
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.downloadTemplateGet().url">
+                        <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                        <span>Download template</span>
+                    </a>
+
+                    @* Import CSV: form is the outer element, label styled as a button *@
+                    <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
+                        <label class="admin-button admin-button--secondary">
+                            <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+                            <span id="inv_manage_import_csv_btn">Import CSV</span>
+                            <input type="file" name="filename" accept=".csv" hidden onchange="this.form.submit()" />
+                        </label>
+                    </form>
+
                 </div>
             </div>
 
             <ul class="admin-guidelines">
+                <li>Export inventory, edit Current Quantity, then import the comma-delimited (,) CSV to replace stock totals. Keep all six columns and the original IDs and medication names.</li>
+                <li>Initial Quantity, Time Added, and Created By are for reference only. Medications omitted from the file remain unchanged. Add new medications using the actions above.</li>
                 <li id="inv_manage_guideline_add">Add medications using the actions above.</li>
                 <li>Formulary changes apply to users on <strong>@viewModel.getMissionTripItem.getFriendlyTripTitle</strong>.</li>
                 <li id="inv_manage_guideline_update">Update current or initial quantities as inventory evolves.</li>
