@@ -44,7 +44,6 @@ import play.Logger;
 
 import java.io.File;
 import java.util.*;
-import java.util.regex.Pattern;
 
 public class InventoryService implements IInventoryService {
 
@@ -400,25 +399,28 @@ public class InventoryService implements IInventoryService {
         try {
             File myObj = (File) file;
             Scanner myReader = new Scanner(myObj);
-            Pattern pattern = Pattern.compile(",");
             if (myReader.hasNextLine()) {
                 String data = myReader.nextLine();
-                String[] items = pattern.split(data);
-                if (!items[0].equals("Medication") || !items[1].equals("Quantity")) {
+                List<String> items = parseCsvLine(data);
+                if (items.size() < 2 || !items.get(0).equals("Medication") || !items.get(1).equals("Quantity")) {
                     response.addError("", "CSV file header is not valid ...");
                     return response;
                 }
             }
             while (myReader.hasNextLine()) {
                 String data = myReader.nextLine();
-                String[] items = pattern.split(data);
+                List<String> items = parseCsvLine(data);
+                if (items.size() < 2) {
+                    response.addError("", "CSV row is missing Medication or Quantity.");
+                    return response;
+                }
                 String name;
                 name = currentUser.getLastName() + ", " + currentUser.getFirstName();
                 boolean medExists = false;
                 IMedicationInventory newMedication = null;
                 for (IMedicationInventory med : existentMedicationInventory) {
                     MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
-                    if (medHelper.getFullName().contains(items[0])) {
+                    if (medHelper.getFullName().contains(items.get(0))) {
                         medExists = true;
                         newMedication = med;
                         break;
@@ -435,14 +437,14 @@ public class InventoryService implements IInventoryService {
                     medicationItemServiceResponse = createOrUpdateMedicationInventory(
                             newMedication.getMedication().getId(),
                             tripId,
-                            Integer.parseInt(items[1]),
-                            Integer.parseInt(items[1]) == 0 ?
+                            Integer.parseInt(items.get(1)),
+                            Integer.parseInt(items.get(1)) == 0 ?
                                     newMedication.getTimeAdded() :
                                     DateTime.now(), name);
                     if (!medicationItemServiceResponse.hasErrors()) {
                         finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
                                 newMedication.getMedication(), newMedication.getQuantityCurrent(), newMedication.getQuantityInitial(), newMedication.getIsDeleted(),
-                                Integer.parseInt(items[1]) == 0 ?
+                                Integer.parseInt(items.get(1)) == 0 ?
                                         newMedication.getTimeAdded().toString() :
                                         DateTime.now().toString(), name));
                     } else {
@@ -451,16 +453,16 @@ public class InventoryService implements IInventoryService {
                     }
                 } else {
                     //add the drug
-                    IMedication medication = medicationRepository.createNewMedication(items[0]);
+                    IMedication medication = medicationRepository.createNewMedication(items.get(0));
                     ServiceResponse<MedicationItem> medicationItemServiceResponse;
                     medicationItemServiceResponse = createOrUpdateMedicationInventory(
                             medication.getId(),
                             tripId,
-                            Integer.parseInt(items[1]),
+                            Integer.parseInt(items.get(1)),
                             DateTime.now(), name);
                     if (true) {
                         finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
-                                medication, Integer.parseInt(items[1]), Integer.parseInt(items[1]), null,
+                                medication, Integer.parseInt(items.get(1)), Integer.parseInt(items.get(1)), null,
                                 DateTime.now().toString(), name));
                     } else {
                         response.addError("", String.valueOf(medicationItemServiceResponse.getErrors().values()));
@@ -500,6 +502,36 @@ public class InventoryService implements IInventoryService {
 
         return response;
 
+    }
+
+    /** Parses one RFC 4180-style CSV record, including quoted commas and quotes. */
+    private List<String> parseCsvLine(String line) {
+        List<String> values = new ArrayList<>();
+        StringBuilder value = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int index = 0; index < line.length(); index++) {
+            char character = line.charAt(index);
+            if (character == '"') {
+                if (inQuotes && index + 1 < line.length() && line.charAt(index + 1) == '"') {
+                    value.append('"');
+                    index++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (character == ',' && !inQuotes) {
+                values.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(character);
+            }
+        }
+
+        if (inQuotes) {
+            throw new IllegalArgumentException("CSV row has an unclosed quoted value.");
+        }
+        values.add(value.toString());
+        return values;
     }
 
     public int sum(int[] arr){

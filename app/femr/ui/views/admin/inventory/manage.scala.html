@@ -154,7 +154,12 @@
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
 
-                                        @* Import CSV: form is the outer element, label styled as a button *@
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.downloadTemplateGet().url">
+                        <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                        <span>Download template</span>
+                    </a>
+
+                    @* Import CSV: form is the outer element, label styled as a button *@
                     <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
