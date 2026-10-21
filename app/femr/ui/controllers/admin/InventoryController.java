@@ -32,6 +32,7 @@ import femr.ui.models.admin.inventory.*;
 import femr.ui.views.html.admin.inventory.custom;
 import femr.ui.views.html.admin.inventory.existing;
 import femr.ui.views.html.admin.inventory.manage;
+import femr.util.stringhelpers.FormularyCsvTemplate;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
@@ -380,13 +381,17 @@ public class InventoryController extends Controller {
     public Result exportGet(int tripId) {
 
       ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
+      if (exportServiceResponse.hasErrors()) {
+          flash("error", "The inventory file could not be exported.");
+          return redirect("/admin/inventory/" + tripId);
+      }
 
       SimpleDateFormat format = new SimpleDateFormat("MMddyy-HHmmss");
       String timestamp = format.format(new Date());
       String csvFileName = "inventory-"+timestamp+".csv";
       response().setHeader("Content-disposition", "attachment; filename=" + csvFileName);
 
-      return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
+      return ok(exportServiceResponse.getResponseObject()).as("text/csv; charset=utf-8");
     }
 
 
@@ -419,6 +424,11 @@ public class InventoryController extends Controller {
 
         CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
 
+        if (!uploadedFile.getFilename().toLowerCase(java.util.Locale.ROOT).endsWith(".csv")) {
+            flash("error", "Choose a comma-delimited .csv inventory file.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
         ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
 
         if (!importServiceResponse.hasErrors()) {
@@ -428,9 +438,17 @@ public class InventoryController extends Controller {
                     + importServiceResponse.getErrors());
             String validationMessage = importServiceResponse.getErrors().get("csvValidation");
             flash("error", validationMessage != null ? validationMessage
-                    : "The CSV could not be imported. Check its column headers and values, then try again.");
+                    : String.join(" ", importServiceResponse.getErrors().values()));
             return redirect("/admin/inventory/" + tripId);
         }
+    }
+
+    /**
+     * Downloads a starter file whose columns match the formulary CSV importer.
+     */
+    public Result downloadTemplateGet() {
+        response().setHeader("Content-disposition", "attachment; filename=formulary-template.csv");
+        return ok(FormularyCsvTemplate.getCsv()).as("text/csv");
     }
 
     /**

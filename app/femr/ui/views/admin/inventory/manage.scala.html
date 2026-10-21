@@ -154,7 +154,12 @@
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
 
-                                        @* Import CSV: form is the outer element, label styled as a button *@
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.downloadTemplateGet().url">
+                        <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                        <span>Download template</span>
+                    </a>
+
+                    @* Import CSV: form is the outer element, label styled as a button *@
                     <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
@@ -167,6 +172,8 @@
             </div>
 
             <ul class="admin-guidelines">
+                <li>Export inventory, edit Current Quantity, then import the comma-delimited (,) CSV to replace stock totals. Keep all six columns and the original IDs and medication names.</li>
+                <li>Initial Quantity, Time Added, and Created By are for reference only. Medications omitted from the file remain unchanged. Add new medications using the actions above.</li>
                 <li id="inv_manage_guideline_add">Add medications using the actions above.</li>
                 <li>Formulary changes apply to users on <strong>@viewModel.getMissionTripItem.getFriendlyTripTitle</strong>.</li>
                 <li id="inv_manage_guideline_update">Update current or initial quantities as inventory evolves.</li>
