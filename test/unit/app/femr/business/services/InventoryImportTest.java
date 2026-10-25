@@ -56,7 +56,9 @@ public class InventoryImportTest {
 
     @Test
     public void zeroClearsCurrentStock() throws Exception {
-        assertFalse(service.importCSV(10, file("1,One,0,50,,"), null).hasErrors());
+        ServiceResponse<String> result = service.importCSV(10, file("1,One,0,50,,"), null);
+        assertFalse(result.hasErrors());
+        assertEquals("Import successful: 0 medications added and 1 medication updated.", result.getResponseObject());
         verify(first).setQuantityCurrent(0);
     }
 

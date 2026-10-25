@@ -432,6 +432,8 @@ public class InventoryService implements IInventoryService {
     private ServiceResponse<String> importMedicationQuantityCSV(int tripId, Object file, CurrentUser currentUser) {
         ServiceResponse<String> response = new ServiceResponse<>();
         Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
+        Set<Integer> addedMedications = new HashSet<>();
+        Set<Integer> updatedMedications = new HashSet<>();
         File myObj = (File) file;
 
         try (java.io.BufferedReader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
@@ -497,16 +499,23 @@ public class InventoryService implements IInventoryService {
                     if (medicationItemServiceResponse.hasErrors()) {
                         // TODO: Regroup on how to deal with errors for creating/updating the inventory
                         response.addError("", String.valueOf((medicationItemServiceResponse.getErrors().values())));
-                    } else if (!entryExists) {
-                        // Key by the CSV text so later rows with the same name update this entry instead of creating a duplicate medication
-                        iMedicationInventoryByFullname.put(
-                                medication,
-                                medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
-                        );
+                    } else {
+                        if (!entryExists) addedMedications.add(medicationId);
+                        else if (!addedMedications.contains(medicationId)) updatedMedications.add(medicationId);
+                        if (!entryExists) {
+                            // Repeated rows update this entry instead of creating another medication.
+                            iMedicationInventoryByFullname.put(
+                                    medication,
+                                    medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
+                            );
+                        }
                     }
                 } catch (NumberFormatException ex) {
                     response.addError("", ex.getMessage());
                 }
+            }
+            if (!response.hasErrors()) {
+                response.setResponseObject(importSummary(addedMedications.size(), updatedMedications.size()));
             }
         } catch (IOException ex) {
             response.addError("", ex.getMessage());
@@ -555,7 +564,7 @@ public class InventoryService implements IInventoryService {
                 }
                 transaction.commit();
             }
-            response.setResponseObject("Updated " + rows.size() + " inventory quantities.");
+            response.setResponseObject(importSummary(0, rows.size()));
         } catch (IllegalArgumentException ex) {
             response.addError("validation", ex.getMessage());
         } catch (java.io.IOException ex) {
@@ -565,6 +574,11 @@ public class InventoryService implements IInventoryService {
             response.addError("database", "Inventory could not be saved. No quantities were changed.");
         }
         return response;
+    }
+
+    private String importSummary(int added, int updated) {
+        return "Import successful: " + added + " medication" + (added == 1 ? "" : "s")
+                + " added and " + updated + " " + (updated == 1 ? "medication" : "medications") + " updated.";
     }
 
     /** Parses one RFC 4180-style CSV record, including quoted commas and quotes. */
