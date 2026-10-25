@@ -432,6 +432,7 @@ public class InventoryController extends Controller {
         ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
 
         if (!importServiceResponse.hasErrors()) {
+            flash("success", importServiceResponse.getResponseObject());
             return redirect("/admin/inventory/" + tripId);
         } else {
             System.out.println("CSV import failed: "
