@@ -17,6 +17,7 @@ POST        /admin/users/edit/:id/trips                        @femr.ui.controll
 POST        /admin/users/edit/:id/trips/remove                 @femr.ui.controllers.admin.UsersController.removeTripPost(id: Integer)
 POST        /admin/users/toggle/:id                            @femr.ui.controllers.admin.UsersController.toggleUser(id: Integer)
 GET         /admin/users                                       @femr.ui.controllers.admin.UsersController.manageGet()
+GET         /admin/inventory/template                          @femr.ui.controllers.admin.InventoryController.downloadTemplateGet()
 GET         /admin/inventory/:tripId                           @femr.ui.controllers.admin.InventoryController.manageGet(tripId: Integer)
 POST        /admin/inventory                                   @femr.ui.controllers.admin.InventoryController.managePost()
 GET         /admin/inventory/custom/:tripId                    @femr.ui.controllers.admin.InventoryController.customGet(tripId: Integer)

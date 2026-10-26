@@ -33,6 +33,7 @@ import femr.ui.models.admin.inventory.*;
 import femr.ui.views.html.admin.inventory.custom;
 import femr.ui.views.html.admin.inventory.existing;
 import femr.ui.views.html.admin.inventory.manage;
+import femr.util.stringhelpers.FormularyCsvTemplate;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
@@ -399,13 +400,17 @@ public class InventoryController extends Controller {
     public Result exportGet(int tripId) {
 
       ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
+      if (exportServiceResponse.hasErrors()) {
+          flash("error", "The inventory file could not be exported.");
+          return redirect("/admin/inventory/" + tripId);
+      }
 
       SimpleDateFormat format = new SimpleDateFormat("MMddyy-HHmmss");
       String timestamp = format.format(new Date());
       String csvFileName = "inventory-"+timestamp+".csv";
       response().setHeader("Content-disposition", "attachment; filename=" + csvFileName);
 
-      return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
+      return ok(exportServiceResponse.getResponseObject()).as("text/csv; charset=utf-8");
     }
 
 
@@ -422,21 +427,38 @@ public class InventoryController extends Controller {
 
         if (formData == null || formData.getFiles().isEmpty()) {
             System.out.println("CSV import failed: no file was uploaded.");
+            flash("error", "Please choose a CSV file to upload.");
             return redirect("/admin/inventory/" + tripId);
         }
 
         // ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
         Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
 
+        if (uploadedFile.getFilename() == null
+                || uploadedFile.getFilename().trim().isEmpty()) {
+            System.out.println("CSV import failed: no file was selected.");
+            flash("error", "Please choose a CSV file to upload.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
         CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
 
-        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId, uploadedFile.getFile(), currentUser);
-
-        if (formData != null && !importServiceResponse.hasErrors())
+        if (!uploadedFile.getFilename().toLowerCase(java.util.Locale.ROOT).endsWith(".csv")) {
+            flash("error", "Choose a comma-delimited .csv inventory file.");
             return redirect("/admin/inventory/" + tripId);
-        else {
+        }
+
+        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
+
+        if (!importServiceResponse.hasErrors()) {
+            flash("success", importServiceResponse.getResponseObject());
+            return redirect("/admin/inventory/" + tripId);
+        } else {
             System.out.println("CSV import failed: "
                     + importServiceResponse.getErrors());
+            String validationMessage = importServiceResponse.getErrors().get("csvValidation");
+            flash("error", validationMessage != null ? validationMessage
+                    : String.join(" ", importServiceResponse.getErrors().values()));
             return redirect("/admin/inventory/" + tripId);
         }
     }
@@ -572,6 +594,14 @@ public class InventoryController extends Controller {
             this.expiresAt = System.currentTimeMillis() + PENDING_IMPORT_LIFETIME_MS;
         }
     }
+    /**
+     * Downloads a starter file whose columns match the formulary CSV importer.
+     */
+    public Result downloadTemplateGet() {
+        response().setHeader("Content-disposition", "attachment; filename=formulary-template.csv");
+        return ok(FormularyCsvTemplate.getCsv()).as("text/csv");
+    }
+
     /**
      * Called when a user wants to export shopping list to a CSV file.
      * @param tripId export inventory for trip with this ID
