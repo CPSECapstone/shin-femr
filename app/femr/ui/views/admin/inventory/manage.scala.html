@@ -240,6 +240,40 @@
                     </tbody>
                 </table>
             </div>
+
+            @if(viewModel.getImportPreview != null) {
+                <div class="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventoryImportPreviewTitle">
+                    <div class="inventory-import-preview__card">
+                        <h2 id="inventoryImportPreviewTitle">Review formulary changes</h2>
+                        <p>Nothing has been changed yet. New medicines are highlighted; quantity changes show the current value and the uploaded value.</p>
+                        <div class="admin-table-wrap">
+                            <table class="admin-table inventory-import-preview__table">
+                                <thead><tr><th>Medication</th><th>Change</th><th>Current quantity</th><th>Uploaded quantity</th><th>Initial quantity</th></tr></thead>
+                                <tbody>
+                                @for(change <- viewModel.getImportPreview) {
+                                    <tr class="@if(change.getIsNew) {inventory-import-preview__new}">
+                                        <td>@change.getMedicationName</td>
+                                        <td>@if(change.getIsNew) {New medicine} else if(change.getCurrentQuantityChanged || change.getInitialQuantityChanged) {Quantity updated} else {No change}</td>
+                                        <td>@if(change.getCurrentQuantityBefore != null) {@change.getCurrentQuantityBefore} else {--}</td>
+                                        <td>@change.getCurrentQuantityAfter</td>
+                                        <td>
+                                            @if(change.getInitialQuantityChanged) {
+                                                @if(change.getInitialQuantityBefore != null) {@change.getInitialQuantityBefore &rarr; }
+                                                @change.getInitialQuantityAfter
+                                            } else {Unchanged}
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="inventory-import-preview__actions">
+                            <form action="@InventoryController.cancelCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--secondary">Cancel</button></form>
+                            <form action="@InventoryController.confirmCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--primary">Confirm and apply changes</button></form>
+                        </div>
+                    </div>
+                </div>
+            }
         </section>
     }
 }
