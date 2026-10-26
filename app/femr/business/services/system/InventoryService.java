@@ -393,113 +393,46 @@ public class InventoryService implements IInventoryService {
 
     @Override
     public ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser) {
-
         ServiceResponse<String> response = new ServiceResponse<>();
         List<InventoryExportItem> newMedicationInventory = new ArrayList<>();
         List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
         try {
-            File myObj = (File) file;
-            Scanner myReader = new Scanner(myObj);
+            Scanner myReader = new Scanner((File) file);
             Pattern pattern = Pattern.compile(",");
             if (myReader.hasNextLine()) {
-                String data = myReader.nextLine();
-                String[] items = pattern.split(data);
-                if (!items[0].equals("Medication") || !items[1].equals("Quantity")) {
-                    response.addError("", "CSV file header is not valid ...");
-                    return response;
-                }
+                String[] items = pattern.split(myReader.nextLine());
+                if (!items[0].equals("Medication") || !items[1].equals("Quantity")) { response.addError("", "CSV file header is not valid ..."); return response; }
             }
             while (myReader.hasNextLine()) {
-                String data = myReader.nextLine();
-                String[] items = pattern.split(data);
-                String name;
-                name = currentUser.getLastName() + ", " + currentUser.getFirstName();
-                boolean medExists = false;
+                String[] items = pattern.split(myReader.nextLine());
+                String name = currentUser.getLastName() + ", " + currentUser.getFirstName();
                 IMedicationInventory newMedication = null;
                 for (IMedicationInventory med : existentMedicationInventory) {
                     MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
-                    if (medHelper.getFullName().contains(items[0])) {
-                        medExists = true;
-                        newMedication = med;
-                        break;
-                    } else {
-                        medExists = false;
-                    }
+                    if (medHelper.getFullName().contains(items[0])) { newMedication = med; break; }
                 }
                 InventoryExportItem finalMed;
-
-
-                if (medExists == true) {
-                    //update the drug
-                    ServiceResponse<MedicationItem> medicationItemServiceResponse;
-                    medicationItemServiceResponse = createOrUpdateMedicationInventory(
-                            newMedication.getMedication().getId(),
-                            tripId,
-                            Integer.parseInt(items[1]),
-                            Integer.parseInt(items[1]) == 0 ?
-                                    newMedication.getTimeAdded() :
-                                    DateTime.now(), name);
-                    if (!medicationItemServiceResponse.hasErrors()) {
-                        finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
-                                newMedication.getMedication(), newMedication.getQuantityCurrent(), newMedication.getQuantityInitial(), newMedication.getIsDeleted(),
-                                Integer.parseInt(items[1]) == 0 ?
-                                        newMedication.getTimeAdded().toString() :
-                                        DateTime.now().toString(), name));
-                    } else {
-                        response.addError("", String.valueOf((medicationItemServiceResponse.getErrors().values())));
-                        return response;
-                    }
+                if (newMedication != null) {
+                    ServiceResponse<MedicationItem> serviceResponse = createOrUpdateMedicationInventory(newMedication.getMedication().getId(), tripId, Integer.parseInt(items[1]), Integer.parseInt(items[1]) == 0 ? newMedication.getTimeAdded() : DateTime.now(), name);
+                    if (serviceResponse.hasErrors()) { response.addError("", String.valueOf(serviceResponse.getErrors().values())); return response; }
+                    finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(newMedication.getMedication(), newMedication.getQuantityCurrent(), newMedication.getQuantityInitial(), newMedication.getIsDeleted(), Integer.parseInt(items[1]) == 0 ? newMedication.getTimeAdded().toString() : DateTime.now().toString(), name));
                 } else {
-                    //add the drug
                     IMedication medication = medicationRepository.createNewMedication(items[0]);
-                    ServiceResponse<MedicationItem> medicationItemServiceResponse;
-                    medicationItemServiceResponse = createOrUpdateMedicationInventory(
-                            medication.getId(),
-                            tripId,
-                            Integer.parseInt(items[1]),
-                            DateTime.now(), name);
-                    if (true) {
-                        finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(
-                                medication, Integer.parseInt(items[1]), Integer.parseInt(items[1]), null,
-                                DateTime.now().toString(), name));
-                    } else {
-                        response.addError("", String.valueOf(medicationItemServiceResponse.getErrors().values()));
-                        return response;
-                    }
+                    createOrUpdateMedicationInventory(medication.getId(), tripId, Integer.parseInt(items[1]), DateTime.now(), name);
+                    finalMed = new InventoryExportItem(itemModelMapper.createMedicationItem(medication, Integer.parseInt(items[1]), Integer.parseInt(items[1]), null, DateTime.now().toString(), name));
                 }
-
                 newMedicationInventory.add(finalMed);
-
-
             }
             myReader.close();
             List<InventoryExportItem> newMedicationInventoryHelper = new ArrayList<>();
-            for (IMedicationInventory med : existentMedicationInventory) {
-                for (InventoryExportItem newMed : newMedicationInventory) {
-                    MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
-                    if (!medHelper.getFullName().equals(newMed.getName())) {
-                        String name;
-                        name = currentUser.getLastName() + ", " + currentUser.getFirstName();
-                        newMedicationInventoryHelper.add(
-                                new InventoryExportItem(itemModelMapper.createMedicationItem(
-                                        med.getMedication(), med.getQuantityCurrent(), med.getQuantityInitial(), med.getIsDeleted(),
-                                        med.getTimeAdded().toString(), name))
-                        );
-
-                    }
-                }
+            for (IMedicationInventory med : existentMedicationInventory) for (InventoryExportItem newMed : newMedicationInventory) {
+                MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
+                if (!medHelper.getFullName().equals(newMed.getName())) newMedicationInventoryHelper.add(new InventoryExportItem(itemModelMapper.createMedicationItem(med.getMedication(), med.getQuantityCurrent(), med.getQuantityInitial(), med.getIsDeleted(), med.getTimeAdded().toString(), currentUser.getLastName() + ", " + currentUser.getFirstName())));
             }
-
-            for (InventoryExportItem med : newMedicationInventoryHelper) {
-                newMedicationInventory.add(med);
-            }
+            newMedicationInventory.addAll(newMedicationInventoryHelper);
             response.setResponseObject(newMedicationInventory.toString());
-        } catch (Exception ex) {
-            response.addError("", ex.getMessage());
-        }
-
+        } catch (Exception ex) { response.addError("", ex.getMessage()); }
         return response;
-
     }
 
     public int sum(int[] arr){
