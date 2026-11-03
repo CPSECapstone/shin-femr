@@ -34,6 +34,9 @@ import femr.ui.views.html.admin.inventory.custom;
 import femr.ui.views.html.admin.inventory.existing;
 import femr.ui.views.html.admin.inventory.manage;
 import femr.util.stringhelpers.FormularyCsvTemplate;
+import femr.util.stringhelpers.CSVParser;
+import femr.util.stringhelpers.InventoryCsv;
+import org.apache.commons.csv.CSVRecord;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
@@ -52,8 +55,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Scanner;
-import java.util.regex.Pattern;
 
 @Security.Authenticated(FEMRAuthenticated.class)
 @AllowedRoles({Roles.ADMINISTRATOR, Roles.SUPERUSER})
@@ -549,36 +550,78 @@ public class InventoryController extends Controller {
             response.addError("", inventoryResponse.getErrors().toString());
             return response;
         }
-        try {
-            List<InventoryImportPreviewItem> preview = new ArrayList<>();
-            Scanner reader = new Scanner(file);
-            Pattern pattern = Pattern.compile(",");
-            if (reader.hasNextLine()) {
-                String[] headers = pattern.split(reader.nextLine());
-                if (!headers[0].equals("Medication") || !headers[1].equals("Quantity")) {
-                    response.addError("", "CSV file header is not valid ...");
-                    reader.close();
-                    return response;
-                }
+        try (java.io.BufferedReader reader = Files.newBufferedReader(file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+            String header = reader.readLine();
+            if (header != null && header.startsWith("\uFEFF")) header = header.substring(1);
+            if ("Medication,Quantity".equals(header)) {
+                return createMedicationQuantityPreview(file, inventoryResponse.getResponseObject());
             }
-            while (reader.hasNextLine()) {
-                String[] values = pattern.split(reader.nextLine());
-                int quantity = Integer.parseInt(values[1]);
+        } catch (Exception ex) {
+            response.addError("", ex.getMessage());
+            return response;
+        }
+
+        // Exported inventory files replace the current quantity; use the same parser as InventoryService.
+        try (java.io.Reader reader = Files.newBufferedReader(file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+            List<InventoryImportPreviewItem> preview = new ArrayList<>();
+            for (InventoryCsv.Row row : InventoryCsv.read(reader)) {
                 MedicationItem existing = null;
                 for (MedicationItem medication : inventoryResponse.getResponseObject()) {
-
-                    if (medication.getIsDeleted() == null && medication.getFullName().contains(values[0])) {
+                    if (medication.getIsDeleted() == null && medication.getId() == row.medicationId) {
                         existing = medication;
                         break;
                     }
                 }
-                preview.add(new InventoryImportPreviewItem(values[0], existing == null,
+                if (existing == null) {
+                    response.addError("", "Row " + row.number + ": medication ID " + row.medicationId
+                            + " is not in this trip's active inventory.");
+                    return response;
+                }
+                if (!existing.getFullName().trim().equals(row.medicationName)) {
+                    response.addError("", "Row " + row.number + ": Medication does not match ID "
+                            + row.medicationId + ". Export a fresh inventory file.");
+                    return response;
+                }
+                preview.add(new InventoryImportPreviewItem(row.medicationName, false,
+                        existing.getQuantityCurrent(), row.quantity,
+                        existing.getQuantityTotal(), existing.getQuantityTotal()));
+            }
+            response.setResponseObject(preview);
+        } catch (Exception ex) {
+            response.addError("", ex.getMessage());
+        }
+        return response;
+    }
+
+    private ServiceResponse<List<InventoryImportPreviewItem>> createMedicationQuantityPreview(
+            File file, List<MedicationItem> medications) {
+        ServiceResponse<List<InventoryImportPreviewItem>> response = new ServiceResponse<>();
+        try (java.io.BufferedReader reader = Files.newBufferedReader(file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+            List<InventoryImportPreviewItem> preview = new ArrayList<>();
+            reader.mark(1);
+            if (reader.read() != '\uFEFF') reader.reset();
+            for (CSVRecord record : CSVParser.parse(reader, new String[] {"Medication", "Quantity"})) {
+                String medicationName = record.get("Medication");
+                if (medicationName.isEmpty() || record.get("Quantity").isEmpty()) {
+                    response.addError("", "Row " + (record.getRecordNumber() + 1)
+                            + " is missing a medication or quantity.");
+                    return response;
+                }
+                int quantity = Integer.parseInt(record.get("Quantity"));
+                MedicationItem existing = null;
+                for (MedicationItem medication : medications) {
+                    if (medication.getIsDeleted() == null
+                            && medication.getFullName().trim().equals(medicationName)) {
+                        existing = medication;
+                        break;
+                    }
+                }
+                preview.add(new InventoryImportPreviewItem(medicationName, existing == null,
                         existing == null ? null : existing.getQuantityCurrent(),
                         existing == null ? quantity : existing.getQuantityCurrent() + quantity,
                         existing == null ? null : existing.getQuantityTotal(),
                         existing == null ? quantity : existing.getQuantityTotal()));
             }
-            reader.close();
             response.setResponseObject(preview);
         } catch (Exception ex) {
             response.addError("", ex.getMessage());
