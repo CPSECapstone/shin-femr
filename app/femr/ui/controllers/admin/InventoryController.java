@@ -401,21 +401,16 @@ public class InventoryController extends Controller {
 
         Http.MultipartFormData formData = request().body().asMultipartFormData();
 
-        if (formData == null || formData.getFiles().isEmpty()) {
-            System.out.println("CSV import failed: no file was uploaded.");
-            return redirect("/admin/inventory/" + tripId);
-        }
-
         // ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
         Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
 
         CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
 
-        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId, uploadedFile.getFile(), currentUser);
+        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
 
-        if (formData != null && !importServiceResponse.hasErrors())
+        if (formData != null && !importServiceResponse.hasErrors()) {
             return redirect("/admin/inventory/" + tripId);
-        else {
+        } else {
             System.out.println("CSV import failed: "
                     + importServiceResponse.getErrors());
             return redirect("/admin/inventory/" + tripId);

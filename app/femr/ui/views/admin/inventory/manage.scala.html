@@ -149,7 +149,7 @@
                     </a>
 
                                         @* Import CSV: form is the outer element, label styled as a button *@
-                    <form action="@InventoryController.previewCSVImport(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
+                    <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
                             <span id="inv_manage_import_csv_btn">Import CSV</span>
