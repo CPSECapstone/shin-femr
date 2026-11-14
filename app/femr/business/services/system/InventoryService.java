@@ -27,6 +27,7 @@ import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.InventoryExportItem;
 import femr.common.models.MedicationItem;
+import femr.common.models.InventoryImportPreviewItem;
 import femr.common.models.ShoppingListExportItem;
 import femr.data.IDataModelMapper;
 import femr.data.daos.core.IBurnRateRepository;
@@ -45,6 +46,7 @@ import org.ejml.simple.SimpleMatrix;
 import org.joda.time.DateTime;
 import play.Logger;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -398,6 +400,123 @@ public class InventoryService implements IInventoryService {
     /**
      * {@inheritDoc}
      */
+
+    @Override
+    public ServiceResponse<List<InventoryImportPreviewItem>> createImportPreview(int tripId, Object file) {
+        ServiceResponse<List<InventoryImportPreviewItem>> response = new ServiceResponse<>();
+        List<? extends IMedicationInventory> inventories = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+        Map<String, IMedicationInventory> byName = new HashMap<>();
+        Map<Integer, IMedicationInventory> byId = new HashMap<>();
+        for (IMedicationInventory inventory : inventories) {
+            MedicationItem item = itemModelMapper.createMedicationItem(inventory.getMedication(), inventory.getQuantityCurrent(), inventory.getQuantityInitial(), null, null, null);
+            byName.put(item.getFullName().trim(), inventory);
+            byId.put(inventory.getMedication().getId(), inventory);
+        }
+        try (BufferedReader reader = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
+            String header = reader.readLine();
+            if (header != null && header.startsWith("\uFEFF")) header = header.substring(1);
+            List<InventoryImportPreviewItem> preview = new ArrayList<>();
+            if ("Medication,Quantity".equals(header)) {
+                try (Reader rowsReader = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
+                    BufferedReader rows = (BufferedReader) rowsReader;
+                    rows.mark(1); if (rows.read() != '\uFEFF') rows.reset();
+                    for (CSVRecord record : CSVParser.parse(rows, new String[] {"Medication", "Quantity"})) {
+                        String name = record.get("Medication").trim();
+                        int delta = Integer.parseInt(record.get("Quantity"));
+                        IMedicationInventory existing = byName.get(name);
+                        MedicationItem item = new MedicationItem(); item.setFullName(name);
+                        preview.add(new InventoryImportPreviewItem(item, (int) record.getRecordNumber() + 1, delta, false,
+                                name, existing == null, existing == null ? null : existing.getQuantityCurrent(),
+                                existing == null ? delta : existing.getQuantityCurrent() + delta,
+                                existing == null ? null : existing.getQuantityInitial(),
+                                existing == null ? delta : existing.getQuantityInitial()));
+                    }
+                }
+            } else {
+                List<String> columns = header == null ? null : parseCsvLine(header);
+                if (columns == null || !columns.equals(InventoryExportItem.getFieldOrder())) {
+                    response.addError("csvValidation", "CSV headers do not match. Expected: Medication,Quantity. For exported inventory files, keep the original six column headers.");
+                    return response;
+                }
+                try (Reader rows = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
+                    for (InventoryCsv.Row row : InventoryCsv.read(rows)) {
+                        IMedicationInventory existing = byId.get(row.medicationId);
+                        MedicationItem item = new MedicationItem(); item.setId(row.medicationId); item.setFullName(row.medicationName);
+                        if (existing == null) item.setFullName(row.medicationName);
+                        preview.add(new InventoryImportPreviewItem(item, (int) row.number, null, true, row.medicationName,
+                                existing == null, existing == null ? null : existing.getQuantityCurrent(), row.quantity,
+                                existing == null ? null : existing.getQuantityInitial(), existing == null ? null : existing.getQuantityInitial()));
+                    }
+                }
+            }
+            validatePreview(tripId, preview, byName);
+            response.setResponseObject(preview);
+        } catch (NumberFormatException ex) {
+            response.addError("csvValidation", "A quantity must be a whole number within the supported range.");
+        } catch (Exception ex) {
+            response.addError("csvValidation", ex.getMessage());
+        }
+        return response;
+    }
+
+    @Override
+    public ServiceResponse<String> importPreview(int tripId, List<InventoryImportPreviewItem> preview, CurrentUser currentUser) {
+        ServiceResponse<String> response = new ServiceResponse<>();
+        List<? extends IMedicationInventory> inventories = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+        Map<String, IMedicationInventory> byName = new HashMap<>();
+        for (IMedicationInventory inventory : inventories) {
+            MedicationItem item = itemModelMapper.createMedicationItem(inventory.getMedication(), 0, 0, null, null, null);
+            byName.put(item.getFullName().trim(), inventory);
+        }
+        validatePreview(tripId, preview, byName);
+        for (InventoryImportPreviewItem item : preview) if (item.hasErrors()) {
+            response.addError("validation", "Fix the highlighted preview rows before applying changes."); return response;
+        }
+        int added = 0, updated = 0;
+        try (io.ebean.Transaction transaction = transactionFactory.get()) {
+            for (InventoryImportPreviewItem item : preview) {
+                if (item.getRemoved()) continue;
+                IMedicationInventory existing = byName.get(item.getMedicationName());
+                if (existing == null) {
+                    IMedication medication = medicationRepository.createNewMedication(item.getMedicationName());
+                    existing = dataModelMapper.createMedicationInventory(item.getCurrentQuantityAfter(), item.getInitialQuantityAfter(), medication.getId(), tripId);
+                    added++;
+                } else {
+                    existing.setQuantityCurrent(item.getCurrentQuantityAfter());
+                    updated++;
+                }
+                existing.setTimeAdded(DateTime.now());
+                if (currentUser != null) existing.setCreatedBy(currentUser.getId());
+                if (medicationRepository.saveMedicationInventory(existing) == null) throw new IllegalStateException("Could not save " + item.getMedicationName());
+            }
+            transaction.commit();
+            response.setResponseObject(importSummary(added, updated));
+        } catch (Exception ex) { response.addError("database", "Inventory could not be saved. No quantities were changed."); }
+        return response;
+    }
+
+    private void validatePreview(int tripId, List<InventoryImportPreviewItem> preview, Map<String, IMedicationInventory> byName) {
+        Map<String, InventoryImportPreviewItem> names = new HashMap<>();
+        for (InventoryImportPreviewItem item : preview) {
+            item.clearErrors();
+            if (item.getRemoved()) continue;
+            String name = item.getMedicationName() == null ? "" : item.getMedicationName().trim();
+            if (name.isEmpty()) item.addError("medication", "Medication is required.");
+            else {
+                InventoryImportPreviewItem first = names.put(name, item);
+                if (first != null) {
+                    first.addError("medication", "Medication names must be unique in the preview.");
+                    item.addError("medication", "Medication names must be unique in the preview.");
+                }
+            }
+            if (item.getCurrentQuantityAfter() < 0) item.addError("quantity", "Final stored quantity cannot be negative.");
+            IMedicationInventory existing = byName.get(name);
+            item.setIsNew(existing == null);
+            item.setCurrentQuantityBefore(existing == null ? null : existing.getQuantityCurrent());
+            item.setInitialQuantityBefore(existing == null ? null : existing.getQuantityInitial());
+            item.setInitialQuantityAfter(existing == null ? item.getCurrentQuantityAfter() : existing.getQuantityInitial());
+        }
+    }
 
     @Override
     public ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser) {

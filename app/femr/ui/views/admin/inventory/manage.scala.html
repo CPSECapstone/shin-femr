@@ -18,6 +18,7 @@
         <script type = "text/javascript" src="@assets.path("js/libraries/jquery.dataTables.min.js")"></script>
         <script type="text/javascript" src="@assets.path("js/libraries/typeahead.bundle.min.js")"></script>
         <script type = "text/javascript" src="@assets.path("js/admin/inventory.js")"></script>
+        <script type="text/javascript" src="@assets.path("js/admin/inventory-import-preview.js")"></script>
         <script type="text/javascript">
         document.addEventListener('DOMContentLoaded', function() {
             fetch('@routes.Assets.versioned("json/languages.json")')
@@ -245,31 +246,35 @@
                 <div class="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventoryImportPreviewTitle">
                     <div class="inventory-import-preview__card">
                         <h2 id="inventoryImportPreviewTitle">Review formulary changes</h2>
-                        <p>Nothing has been changed yet. New medicines are highlighted; quantity changes show the current value and the uploaded value.</p>
+                        <p>Edit the medication or final quantity as needed. Errors are shown first and must be fixed before changes can be applied.</p>
+                        <form id="inventoryImportPreviewForm" action="@InventoryController.confirmCSVImport(viewModel.getMissionTripItem.getId).url" method="post">
+                        <input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" />
                         <div class="admin-table-wrap">
                             <table class="admin-table inventory-import-preview__table">
-                                <thead><tr><th>Medication</th><th>Change</th><th>Current quantity</th><th>Uploaded quantity</th><th>Initial quantity</th></tr></thead>
+                                <thead><tr><th>Medication</th><th>change</th><th>current quantity</th><th>new quantity</th><th>new initial quantity</th><th>remove</th></tr></thead>
                                 <tbody>
-                                @for(change <- viewModel.getImportPreview) {
-                                    <tr class="@if(change.getIsNew) {inventory-import-preview__new}">
-                                        <td>@change.getMedicationName</td>
-                                        <td>@if(change.getIsNew) {New medicine} else if(change.getCurrentQuantityChanged || change.getInitialQuantityChanged) {Quantity updated} else {No change}</td>
+                                @for((change, index) <- viewModel.getImportPreview.zipWithIndex) {
+                                    <tr class="@if(change.getIsNew) {inventory-import-preview__new} @if(change.hasErrors) {inventory-import-preview__error-row}" data-preview-row data-delta="@change.getUploadedDelta">
+                                        <td><input class="preview-medication @if(change.getErrors.containsKey("medication")) {inventory-import-preview__invalid}" name="preview.@{index}.medication" value="@change.getMedicationName" aria-label="Medication" />
+                                            @if(change.getErrors.containsKey("medication")) { <span class="inventory-import-preview__error">@change.getErrors.get("medication")</span> }</td>
+                                        <td class="preview-change">@if(change.getIsNew) {New uploaded quantity} else if(change.getCurrentQuantityChanged || change.getInitialQuantityChanged) {Changed} else {No change}</td>
                                         <td>@if(change.getCurrentQuantityBefore != null) {@change.getCurrentQuantityBefore} else {--}</td>
-                                        <td>@change.getCurrentQuantityAfter</td>
+                                        <td><input class="preview-quantity @if(change.getErrors.containsKey("quantity")) {inventory-import-preview__invalid}" type="number" step="1" name="preview.@{index}.quantity" value="@change.getCurrentQuantityAfter" aria-label="New quantity" />
+                                            @if(change.getErrors.containsKey("quantity")) { <span class="inventory-import-preview__error">@change.getErrors.get("quantity")</span> }</td>
                                         <td>
-                                            @if(change.getInitialQuantityChanged) {
-                                                @if(change.getInitialQuantityBefore != null) {@change.getInitialQuantityBefore &rarr; }
-                                                @change.getInitialQuantityAfter
-                                            } else {Unchanged}
+                                            @if(change.getInitialQuantityAfter != null) {@change.getInitialQuantityAfter} else {--}
                                         </td>
+                                        <td><input type="hidden" class="preview-removed-value" name="preview.@{index}.removed" value="false" /><button type="button" class="admin-chip-button admin-chip-button--danger preview-remove">Undo</button></td>
                                     </tr>
                                 }
                                 </tbody>
                             </table>
                         </div>
+                        <p class="inventory-import-preview__client-error" aria-live="polite"></p>
+                        </form>
                         <div class="inventory-import-preview__actions">
                             <form action="@InventoryController.cancelCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--secondary">Cancel</button></form>
-                            <form action="@InventoryController.confirmCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--primary">Confirm and apply changes</button></form>
+                            <button form="inventoryImportPreviewForm" type="submit" class="admin-button admin-button--primary preview-confirm">Confirm and apply changes</button>
                         </div>
                     </div>
                 </div>
