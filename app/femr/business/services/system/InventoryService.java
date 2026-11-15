@@ -39,6 +39,7 @@ import org.ejml.simple.SimpleMatrix;
 import org.joda.time.DateTime;
 import play.Logger;
 
+import javax.xml.ws.Service;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -404,7 +405,8 @@ public class InventoryService implements IInventoryService {
     public ServiceResponse<CSVImportItem> parseCSV(Object file) {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
-        int NUMBER_OF_ROWS_ADDED = 0; // Parse step adds no rows to the formulary
+        long NUMBER_OF_ROWS_ADDED = 0; // Parse step adds no rows to the formulary
+        String ROW_SUBMIT_ERROR = null; // Parse set adds no rows to the formulary, thus submit errors should be null by default
         ArrayList<CSVImportRowItem> csvImportRowItemsArrayList = new ArrayList<>();
         ArrayList<String> csvFormatErrorsArrayList = new ArrayList<>();
 
@@ -438,27 +440,139 @@ public class InventoryService implements IInventoryService {
                 CSVImportRowItem rowItem = itemModelMapper.createCSVImportRowItem(
                         recordNumber,
                         medicationCellItem,
-                        quantityCellItem
+                        quantityCellItem,
+                        ROW_SUBMIT_ERROR
                 );
                 csvImportRowItemsArrayList.add(rowItem);
-                csvImportCacheRepository.addToCache(rowItem);
             }
         } catch (IOException ex) {
             // Any IOException's caught will come from the parsing step, highlight them as format errors
             csvFormatErrorsArrayList.add(ex.getMessage());
         }
 
+        // Cache the representations for each parsed row
+        csvImportCacheRepository.setCache(csvImportRowItemsArrayList);
+
         // Final response object creation
-        CSVImportRowItem[] csvImportRowItems = csvImportRowItemsArrayList.isEmpty()
-                ? null
-                : csvImportRowItemsArrayList.toArray(new CSVImportRowItem[0]);
-        String[] csvFormatErrors = csvFormatErrorsArrayList.isEmpty()
-                ? null
-                : csvFormatErrorsArrayList.toArray(new String[0]);
+        ArrayList<CSVImportRowItem> csvImportRowItemsClientCopy = new ArrayList<>(csvImportRowItemsArrayList);
+        ArrayList<String> csvFormatErrorsClientCopy = new ArrayList<>(csvFormatErrorsArrayList);
         CSVImportItem csvImportItem = itemModelMapper.createCSVImportItem(
                 NUMBER_OF_ROWS_ADDED,
-                csvImportRowItems,
-                csvFormatErrors
+                csvImportRowItemsClientCopy,
+                csvFormatErrorsClientCopy
+        );
+        response.setResponseObject(csvImportItem);
+
+        return response;
+    }
+
+    public ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem) {
+        ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
+
+        long numberOfRowsAdded = 0;
+        ArrayList<String> CSV_FORMAT_ERRORS = new ArrayList<>(); // No parsing during submit, thus this will stay empty
+        HashMap<Long, CSVSubmitEditItem> edits = csvSubmitItem.getEdits();
+        HashSet<Long> deletions = csvSubmitItem.getDeletions();
+        List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+        String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
+        Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
+        ArrayList<CSVImportRowItem> csvImportRowItemsRemainingArrayList = new ArrayList<>();
+
+        for (IMedicationInventory med : existentMedicationInventory) {
+            MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
+            // Full names of medications without ingredients or a form end in a space, but the parser trims all additional whitespace
+            iMedicationInventoryByFullname.put(medHelper.getFullName().trim(), med);
+        }
+
+        for (CSVImportRowItem rowItem : csvImportCacheRepository.getCache()) {
+            long recordNumber = rowItem.getRecordNumber();
+            if (deletions.contains(recordNumber)) {
+                continue;
+            }
+
+            CSVImportCellItem medicationCellItem = rowItem.getMedicationCellItem();
+            CSVImportCellItem quantityCellItem = rowItem.getQuantityCellItem();
+
+            // If edits are present, update the cached value(s)
+            if (edits.containsKey(recordNumber)) {
+                CSVSubmitEditItem csvSubmitEditItem = edits.get(recordNumber);
+
+                // Update the medication if the value is not null
+                String medicationValueEdit = csvSubmitEditItem.getMedication();
+                if (medicationValueEdit != null) {
+                    String medicationCellError = null;
+                    if (!isMedicationValid(medicationValueEdit)) {
+                        medicationCellError = "Invalid medication";
+                    }
+                    medicationCellItem.setValue(medicationValueEdit);
+                    medicationCellItem.setCellError(medicationCellError);
+                }
+
+                // Update the quantity if the value is not null
+                String quantityValueEdit = csvSubmitEditItem.getQuantity();
+                if (quantityValueEdit != null) {
+                    String quantityCellError = null;
+                    if (!isQuantityValid(quantityValueEdit)) {
+                        quantityCellError = "Invalid quantity";
+                    }
+                    quantityCellItem.setValue(quantityValueEdit);
+                    quantityCellItem.setCellError(quantityCellError);
+                }
+            }
+
+            // Validate there are no issues with the medication and quantity values before proceeding
+            if (medicationCellItem.getCellError() != null || quantityCellItem.getCellError() != null) {
+                rowItem.setRowSubmitError(null);
+                csvImportRowItemsRemainingArrayList.add(rowItem);
+                continue;
+            }
+
+            String medication = medicationCellItem.getValue();
+            int quantity = Integer.parseInt(quantityCellItem.getValue());
+
+            // TODO: Currently, if the medication name isn't an exact match, create a new entry. May want to update this later
+            IMedicationInventory entry = iMedicationInventoryByFullname.get(medication);
+            boolean entryExists = (entry != null);
+            int medicationId = entryExists
+                    ? entry.getMedication().getId()
+                    : medicationRepository.createNewMedication(medication).getId();
+            DateTime timeAdded = entryExists
+                    ? quantity != 0
+                    ? DateTime.now()
+                    : entry.getTimeAdded()
+                    : DateTime.now();
+
+            ServiceResponse<MedicationItem> medicationItemServiceResponse;
+            medicationItemServiceResponse = createOrUpdateMedicationInventory(
+                    medicationId,
+                    tripId,
+                    quantity,
+                    timeAdded,
+                    createdBy
+            );
+            if (medicationItemServiceResponse.hasErrors()) {
+                rowItem.setRowSubmitError(String.valueOf((medicationItemServiceResponse.getErrors().values())));
+                csvImportRowItemsRemainingArrayList.add(rowItem);
+                continue;
+            } else if (!entryExists) {
+                // Key by the CSV text so later rows with the same name update this entry instead of creating a duplicate medication
+                iMedicationInventoryByFullname.put(
+                        medication,
+                        medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
+                );
+            }
+            numberOfRowsAdded++;
+        }
+
+        // Cache the remaining rows that have yet to be submitted
+        csvImportCacheRepository.setCache(csvImportRowItemsRemainingArrayList);
+
+        // Final response object creation
+        ArrayList<CSVImportRowItem> csvImportRowItemsClientCopy = new ArrayList<>(csvImportRowItemsRemainingArrayList);
+        CSVImportItem csvImportItem = itemModelMapper.createCSVImportItem(
+                numberOfRowsAdded,
+                csvImportRowItemsClientCopy,
+                CSV_FORMAT_ERRORS
         );
         response.setResponseObject(csvImportItem);
 

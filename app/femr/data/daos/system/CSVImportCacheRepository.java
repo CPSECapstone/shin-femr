@@ -13,8 +13,13 @@ public class CSVImportCacheRepository implements ICSVImportCacheRepository {
     }
 
     @Override
-    public void addToCache(CSVImportRowItem csvImportRowItem) {
-        this.csvImportRowItemsCache.add(csvImportRowItem);
+    public void setCache(ArrayList<CSVImportRowItem> csvImportRowItems) {
+        this.csvImportRowItemsCache = csvImportRowItems;
+    }
+
+    @Override
+    public ArrayList<CSVImportRowItem> getCache() {
+        return this.csvImportRowItemsCache;
     }
 
     @Override
