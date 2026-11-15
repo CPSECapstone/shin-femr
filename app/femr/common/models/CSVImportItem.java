@@ -30,4 +30,8 @@ public class CSVImportItem {
     public void setCSVFormatErrors(String[] csvFormatErrors) {
         this.csvFormatErrors = csvFormatErrors;
     }
+
+    public String[] getCSVFormatErrors() {
+        return this.csvFormatErrors;
+    }
 }

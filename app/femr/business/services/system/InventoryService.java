@@ -408,6 +408,9 @@ public class InventoryService implements IInventoryService {
         ArrayList<CSVImportRowItem> csvImportRowItemsArrayList = new ArrayList<>();
         ArrayList<String> csvFormatErrorsArrayList = new ArrayList<>();
 
+        // Clear the old cache of values
+        csvImportCacheRepository.clearCache();
+
         File myObj = (File) file;
         try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
             String[] expectedHeaders = new String[] {"Medication", "Quantity"};
@@ -438,6 +441,7 @@ public class InventoryService implements IInventoryService {
                         quantityCellItem
                 );
                 csvImportRowItemsArrayList.add(rowItem);
+                csvImportCacheRepository.addToCache(rowItem);
             }
         } catch (IOException ex) {
             // Any IOException's caught will come from the parsing step, highlight them as format errors
