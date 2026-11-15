@@ -39,6 +39,35 @@ public interface IItemModelMapper {
     CityItem createCityItem(String cityName, String countryName);
 
     /**
+     * Generate and provide an instance of CSVImportCellItem
+     *
+     * @param value the value in the cell, can be null
+     * @param cellError error message for the value in the cell, can be null
+     * @return a new CSVImportCellItem
+     */
+    CSVImportCellItem createCSVImportCellItem(String value, String cellError);
+
+    /**
+     * Generate and provide an instance of CSVImportRowItem
+     *
+     * @param recordNumber the record number this object corresponds to in the CSV file
+     * @param medicationCellItem data wrapping the cell value in the "Medication" column, not null
+     * @param quantityCellItem data wrapping the cell value in the "Quantity" column, not null
+     * @return a new CSVImportRowItem
+     */
+    CSVImportRowItem createCSVImportRowItem(long recordNumber, CSVImportCellItem medicationCellItem, CSVImportCellItem quantityCellItem);
+
+    /**
+     * Generate and provide an instance of CSVImportItem
+     *
+     * @param numberOfRowsAdded the number of rows that have been successfully added to the formulary
+     * @param csvImportRowItems the details for each row that haven't been added to the formulary, can be null
+     * @param csvFormatErrors any errors involving the format of the CSV file for importing, can be null
+     * @return a new CSVImportItem
+     */
+    CSVImportItem createCSVImportItem(int numberOfRowsAdded, CSVImportRowItem[] csvImportRowItems, String[] csvFormatErrors);
+
+    /**
      * Generate and provide an instance of MedicationAdministrationItem
      *
      * @param conceptPrescriptionAdministration

@@ -60,6 +60,47 @@ public class ItemModelMapper implements IItemModelMapper {
      * {@inheritDoc}
      */
     @Override
+    public CSVImportCellItem createCSVImportCellItem(String value, String cellError) {
+        CSVImportCellItem csvImportCellItem = new CSVImportCellItem();
+
+        csvImportCellItem.setValue(value);
+        csvImportCellItem.setCellError(cellError);
+
+        return csvImportCellItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CSVImportRowItem createCSVImportRowItem(long recordNumber, CSVImportCellItem medicationCellItem, CSVImportCellItem quantityCellItem) {
+        CSVImportRowItem csvImportRowItem = new CSVImportRowItem();
+
+        csvImportRowItem.setRecordNumber(recordNumber);
+        csvImportRowItem.setMedicationCellItem(medicationCellItem);
+        csvImportRowItem.setQuantityCellItem(quantityCellItem);
+
+        return csvImportRowItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CSVImportItem createCSVImportItem(int numberOfRowsAdded, CSVImportRowItem[] csvImportRowItems, String[] csvFormatErrors) {
+        CSVImportItem csvImportItem = new CSVImportItem();
+
+        csvImportItem.setNumberOfRowsAdded(numberOfRowsAdded);
+        csvImportItem.setCSVImportRowItems(csvImportRowItems);
+        csvImportItem.setCSVFormatErrors(csvFormatErrors);
+
+        return csvImportItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public MedicationItem createMedicationItem(IMedication medication, Integer quantityCurrent, Integer quantityTotal, DateTime isDeleted, String timeAdded, String createdBy) {
 
         if (medication == null) {

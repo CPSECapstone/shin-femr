@@ -18,29 +18,34 @@ public class CSVParserTest {
     public void testParseReadsRowsByHeaderName() throws Exception {
         String csv = "Medication,Quantity\nAspirin,25\nTylenol,10\n";
 
-        List<CSVRecord> records = CSVParser.parse(new StringReader(csv), HEADERS);
+        List<CSVRecord> records = CSVParserWrapper.parse(new StringReader(csv), HEADERS);
 
         assertEquals(2, records.size());
         assertEquals("Aspirin", records.get(0).get("Medication"));
         assertEquals("25", records.get(0).get("Quantity"));
+        assertEquals(1, records.get(0).getRecordNumber());
         assertEquals("Tylenol", records.get(1).get("Medication"));
         assertEquals("10", records.get(1).get("Quantity"));
+        assertEquals(2, records.get(1).getRecordNumber());
     }
 
     @Test
     public void testParseHandlesQuotedCommasAndBlankLines() throws Exception {
         String csv = "Medication,Quantity\n\n\"Tylenol, 500mg\", 7 \n\n";
 
-        List<CSVRecord> records = CSVParser.parse(new StringReader(csv), HEADERS);
+        List<CSVRecord> records = CSVParserWrapper.parse(new StringReader(csv), HEADERS);
 
         assertEquals(1, records.size());
         assertEquals("Tylenol, 500mg", records.get(0).get("Medication"));
         assertEquals("7", records.get(0).get("Quantity"));
+        assertEquals(1, records.get(0).getRecordNumber());
     }
 
     @Test
     public void testParseHeaderOnlyReturnsNoRecords() throws Exception {
-        List<CSVRecord> records = CSVParser.parse(new StringReader("Medication,Quantity\n"), HEADERS);
+        String csv = "Medication,Quantity\n";
+
+        List<CSVRecord> records = CSVParserWrapper.parse(new StringReader(csv), HEADERS);
 
         assertTrue(records.isEmpty());
     }
@@ -50,10 +55,10 @@ public class CSVParserTest {
         String csv = "Foo,Bar\nAspirin,25\n";
 
         try {
-            CSVParser.parse(new StringReader(csv), HEADERS);
+            CSVParserWrapper.parse(new StringReader(csv), HEADERS);
             fail("Expected IOException for missing header");
         } catch (IOException ex) {
-            assertEquals("CSV header is missing required column 'Medication'. Found: [Foo, Bar]",
+            assertEquals("CSV header is missing required column(s) [Medication, Quantity]. Found: [Foo, Bar]",
                     ex.getMessage());
         }
     }

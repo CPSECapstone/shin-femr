@@ -25,18 +25,13 @@ import femr.business.services.core.IInventoryService;
 import femr.common.IItemModelMapper;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
-import femr.common.models.InventoryExportItem;
-import femr.common.models.MedicationItem;
-import femr.common.models.ShoppingListExportItem;
+import femr.common.models.*;
 import femr.data.IDataModelMapper;
-import femr.data.daos.core.IBurnRateRepository;
-import femr.data.daos.core.IMedicationRepository;
-import femr.data.daos.core.IPrescriptionRepository;
-import femr.data.daos.core.IUserRepository;
+import femr.data.daos.core.*;
 import femr.data.models.core.*;
 import femr.data.models.mysql.BurnRate;
 import femr.util.calculations.dateUtils;
-import femr.util.stringhelpers.CSVParser;
+import femr.util.stringhelpers.CSVParserWrapper;
 import femr.util.stringhelpers.CSVWriterGson;
 import femr.util.stringhelpers.GsonFlattener;
 import org.apache.commons.csv.CSVRecord;
@@ -59,6 +54,7 @@ public class InventoryService implements IInventoryService {
     private final IItemModelMapper itemModelMapper;
     private final IBurnRateRepository burnRateRepository;
     private final IPrescriptionRepository prescriptionRepository;
+    private final ICSVImportCacheRepository csvImportCacheRepository;
 
     @Inject
     public InventoryService(IMedicationRepository medicationRepository,
@@ -66,7 +62,8 @@ public class InventoryService implements IInventoryService {
                             IDataModelMapper dataModelMapper,
                             @Named("identified") IItemModelMapper itemModelMapper,
                             IBurnRateRepository burnRateRepository,
-                            IPrescriptionRepository prescriptionRepository
+                            IPrescriptionRepository prescriptionRepository,
+                            ICSVImportCacheRepository csvImportCacheRepository
     ) {
 
         this.burnRateRepository = burnRateRepository;
@@ -75,6 +72,7 @@ public class InventoryService implements IInventoryService {
         this.dataModelMapper = dataModelMapper;
         this.itemModelMapper = itemModelMapper;
         this.prescriptionRepository = prescriptionRepository;
+        this.csvImportCacheRepository = csvImportCacheRepository;
     }
 
 
@@ -390,12 +388,82 @@ public class InventoryService implements IInventoryService {
         return response;
     }
 
+    private boolean isMedicationValid(String medication) {
+        return (medication != null && !medication.isEmpty());
+    }
 
+    private boolean isQuantityValid(String quantity) {
+        try {
+            Integer.parseInt(quantity);
+            return true;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    public ServiceResponse<CSVImportItem> parseCSV(Object file) {
+        ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
+
+        int NUMBER_OF_ROWS_ADDED = 0; // Parse step adds no rows to the formulary
+        ArrayList<CSVImportRowItem> csvImportRowItemsArrayList = new ArrayList<>();
+        ArrayList<String> csvFormatErrorsArrayList = new ArrayList<>();
+
+        File myObj = (File) file;
+        try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
+            String[] expectedHeaders = new String[] {"Medication", "Quantity"};
+            List<CSVRecord> records = CSVParserWrapper.parse(reader, expectedHeaders);
+
+            for (CSVRecord record : records) {
+                // Create the medication cell item
+                String medicationValue = record.get("Medication");
+                String medicationCellError = null;
+                if (!isMedicationValid(medicationValue)) {
+                    medicationCellError = "Invalid medication";
+                }
+                CSVImportCellItem medicationCellItem = itemModelMapper.createCSVImportCellItem(medicationValue, medicationCellError);
+
+                // Create the quantity cell item
+                String quantityValue = record.get("Quantity");
+                String quantityCellError = null;
+                if (!isQuantityValid(quantityValue)) {
+                    quantityCellError = "Invalid quantity";
+                }
+                CSVImportCellItem quantityCellItem = itemModelMapper.createCSVImportCellItem(quantityValue, quantityCellError);
+
+                // Create the row item
+                long recordNumber = record.getRecordNumber();
+                CSVImportRowItem rowItem = itemModelMapper.createCSVImportRowItem(
+                        recordNumber,
+                        medicationCellItem,
+                        quantityCellItem
+                );
+                csvImportRowItemsArrayList.add(rowItem);
+            }
+        } catch (IOException ex) {
+            // Any IOException's caught will come from the parsing step, highlight them as format errors
+            csvFormatErrorsArrayList.add(ex.getMessage());
+        }
+
+        // Final response object creation
+        CSVImportRowItem[] csvImportRowItems = csvImportRowItemsArrayList.isEmpty()
+                ? null
+                : csvImportRowItemsArrayList.toArray(new CSVImportRowItem[0]);
+        String[] csvFormatErrors = csvFormatErrorsArrayList.isEmpty()
+                ? null
+                : csvFormatErrorsArrayList.toArray(new String[0]);
+        CSVImportItem csvImportItem = itemModelMapper.createCSVImportItem(
+                NUMBER_OF_ROWS_ADDED,
+                csvImportRowItems,
+                csvFormatErrors
+        );
+        response.setResponseObject(csvImportItem);
+
+        return response;
+    }
 
     /**
      * {@inheritDoc}
      */
-
     @Override
     public ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser) {
 
@@ -407,14 +475,12 @@ public class InventoryService implements IInventoryService {
 
         try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
             String[] expectedHeaders = new String[] {"Medication", "Quantity"};
-            List<CSVRecord> records = CSVParser.parse(reader, expectedHeaders);
+            List<CSVRecord> records = CSVParserWrapper.parse(reader, expectedHeaders);
 
             for (IMedicationInventory med : existentMedicationInventory) {
                 MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
-                // Full names of medications without ingredients or a form end in a space, but the parser trims CSV values
+                // Full names of medications without ingredients or a form end in a space, but the parser trims all additional whitespace
                 iMedicationInventoryByFullname.put(medHelper.getFullName().trim(), med);
-
-                Logger.debug(String.format("%d: %s", med.getId(), medHelper.getFullName()));
             }
 
             for (CSVRecord record : records) {
