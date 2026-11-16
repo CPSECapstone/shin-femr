@@ -128,7 +128,7 @@ public interface IInventoryService {
     ServiceResponse<MedicationItem> subtractFromQuantityCurrent(int medicationId, int tripId, int quantityToSubtract);
 
     /**
-     * Exports all six inventory columns as UTF-8 comma-delimited CSV for the provided trip.
+     * Returns a string containing CSV data with the current inventory for the provided trip
      *
      * @param tripId id of the trip
      * @return a string containing the inventory for the trip in CSV form
@@ -145,13 +145,11 @@ public interface IInventoryService {
     ServiceResponse<String> exportShoppingListCSV(int tripId, int desiredWeeksOnHand);
 
     /**
-     * Imports either an exported six-column inventory file or a two-column Medication,Quantity file.
-     * For exported files, current quantities are replaced atomically; IDs must belong to the trip's
-     * active inventory and names must match. Other fields and omitted medications remain unchanged.
+     * Returns a string containing CSV import data with the current inventory for the provided trip
      *
      * @param tripId id of the trip
      * @param file user csv file
-     * @return an update summary, or validation/save errors with no partial changes
+     * @return a string containing the new updated inventory list for the trip
      */
 
     ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser);

@@ -94,18 +94,6 @@
 
     @inventoryMenu(viewModel.getMissionTripItem)
 
-    @if(flash.containsKey("error")) {
-        <div class="alert alert-danger" role="alert">
-            @flash.get("error")
-        </div>
-    }
-
-    @if(flash.containsKey("success")) {
-        <div class="alert alert-success" role="status">
-            @flash.get("success")
-        </div>
-    }
-
     @if(currentUser.getTripId != null && viewModel.getMissionTripItem != null) {
 
         <section class="admin-section">
@@ -160,13 +148,8 @@
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
 
-                    <a class="admin-button admin-button--secondary" href="@InventoryController.downloadTemplateGet().url">
-                        <span class="material-symbols-outlined" aria-hidden="true">download</span>
-                        <span>Download template</span>
-                    </a>
-
-                    @* Import CSV: form is the outer element, label styled as a button *@
-                    <form action="@InventoryController.previewCSVImport(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
+                                        @* Import CSV: form is the outer element, label styled as a button *@
+                    <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
                             <span id="inv_manage_import_csv_btn">Import CSV</span>
@@ -178,8 +161,6 @@
             </div>
 
             <ul class="admin-guidelines">
-                <li>Export inventory, edit Current Quantity, then import the comma-delimited (,) CSV to replace stock totals. Keep all six columns and the original IDs and medication names.</li>
-                <li>Initial Quantity, Time Added, and Created By are for reference only. Medications omitted from the file remain unchanged. Add new medications using the actions above.</li>
                 <li id="inv_manage_guideline_add">Add medications using the actions above.</li>
                 <li>Formulary changes apply to users on <strong>@viewModel.getMissionTripItem.getFriendlyTripTitle</strong>.</li>
                 <li id="inv_manage_guideline_update">Update current or initial quantities as inventory evolves.</li>
@@ -240,40 +221,6 @@
                     </tbody>
                 </table>
             </div>
-
-            @if(viewModel.getImportPreview != null) {
-                <div class="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventoryImportPreviewTitle">
-                    <div class="inventory-import-preview__card">
-                        <h2 id="inventoryImportPreviewTitle">Review formulary changes</h2>
-                        <p>Nothing has been changed yet. New medicines are highlighted; quantity changes show the current value and the uploaded value.</p>
-                        <div class="admin-table-wrap">
-                            <table class="admin-table inventory-import-preview__table">
-                                <thead><tr><th>Medication</th><th>Change</th><th>Current quantity</th><th>Uploaded quantity</th><th>Initial quantity</th></tr></thead>
-                                <tbody>
-                                @for(change <- viewModel.getImportPreview) {
-                                    <tr class="@if(change.getIsNew) {inventory-import-preview__new}">
-                                        <td>@change.getMedicationName</td>
-                                        <td>@if(change.getIsNew) {New medicine} else if(change.getCurrentQuantityChanged || change.getInitialQuantityChanged) {Quantity updated} else {No change}</td>
-                                        <td>@if(change.getCurrentQuantityBefore != null) {@change.getCurrentQuantityBefore} else {--}</td>
-                                        <td>@change.getCurrentQuantityAfter</td>
-                                        <td>
-                                            @if(change.getInitialQuantityChanged) {
-                                                @if(change.getInitialQuantityBefore != null) {@change.getInitialQuantityBefore &rarr; }
-                                                @change.getInitialQuantityAfter
-                                            } else {Unchanged}
-                                        </td>
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="inventory-import-preview__actions">
-                            <form action="@InventoryController.cancelCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--secondary">Cancel</button></form>
-                            <form action="@InventoryController.confirmCSVImport(viewModel.getMissionTripItem.getId).url" method="post"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button type="submit" class="admin-button admin-button--primary">Confirm and apply changes</button></form>
-                        </div>
-                    </div>
-                </div>
-            }
         </section>
     }
 }

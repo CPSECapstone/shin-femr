@@ -28,6 +28,7 @@ import org.joda.time.DateTime;
 import org.joda.time.Days;
 
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -54,6 +55,48 @@ public class ItemModelMapper implements IItemModelMapper {
         cityItem.setCountryName(countryName);
 
         return cityItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CSVImportCellItem createCSVImportCellItem(String value, String cellError) {
+        CSVImportCellItem csvImportCellItem = new CSVImportCellItem();
+
+        csvImportCellItem.setValue(value);
+        csvImportCellItem.setCellError(cellError);
+
+        return csvImportCellItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CSVImportRowItem createCSVImportRowItem(long recordNumber, CSVImportCellItem medicationCellItem, CSVImportCellItem quantityCellItem, String rowSubmitError) {
+        CSVImportRowItem csvImportRowItem = new CSVImportRowItem();
+
+        csvImportRowItem.setRecordNumber(recordNumber);
+        csvImportRowItem.setMedicationCellItem(medicationCellItem);
+        csvImportRowItem.setQuantityCellItem(quantityCellItem);
+        csvImportRowItem.setRowSubmitError(rowSubmitError);
+
+        return csvImportRowItem;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public CSVImportItem createCSVImportItem(long numberOfRowsAdded, ArrayList<CSVImportRowItem> csvImportRowItems, ArrayList<String> csvFormatErrors) {
+        CSVImportItem csvImportItem = new CSVImportItem();
+
+        csvImportItem.setNumberOfRowsAdded(numberOfRowsAdded);
+        csvImportItem.setCSVImportRowItems(csvImportRowItems);
+        csvImportItem.setCSVFormatErrors(csvFormatErrors);
+
+        return csvImportItem;
     }
 
     /**

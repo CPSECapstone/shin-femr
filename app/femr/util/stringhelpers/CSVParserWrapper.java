@@ -8,7 +8,7 @@ import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CSVParser {
+public class CSVParserWrapper {
 
     /**
      * Parses CSV content whose first line is a header row into a list of records.
@@ -18,6 +18,8 @@ public class CSVParser {
      * @throws IOException if the content cannot be read or is not valid CSV
      */
     public static List<CSVRecord> parse(Reader reader, String[] expectedHeaders) throws IOException {
+        ArrayList<String> missingHeaders = new ArrayList<>();
+
         CSVFormat format = CSVFormat.DEFAULT.builder()
                 .setHeader()
                 .setSkipHeaderRecord(true)
@@ -29,11 +31,16 @@ public class CSVParser {
             List<String> actual = parser.getHeaderNames();
             for (String expected : expectedHeaders) {
                 if (!actual.contains(expected)) {
-                    throw new IOException(String.format(
-                            "CSV header is missing required column '%s'. Found: %s", expected, actual));
+                    missingHeaders.add(expected);
                 }
             }
-            return new ArrayList<>(parser.getRecords());
+
+            if (missingHeaders.isEmpty()) {
+                return new ArrayList<>(parser.getRecords());
+            } else {
+                throw new IOException(String.format(
+                        "CSV header is missing required column(s) %s. Found: %s", missingHeaders, actual));
+            }
         }
     }
 }
