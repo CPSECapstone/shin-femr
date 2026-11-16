@@ -25,28 +25,20 @@ import femr.business.services.core.IInventoryService;
 import femr.common.IItemModelMapper;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
-import femr.common.models.InventoryExportItem;
-import femr.common.models.MedicationItem;
-import femr.common.models.InventoryImportPreviewItem;
-import femr.common.models.ShoppingListExportItem;
+import femr.common.models.*;
 import femr.data.IDataModelMapper;
-import femr.data.daos.core.IBurnRateRepository;
-import femr.data.daos.core.IMedicationRepository;
-import femr.data.daos.core.IPrescriptionRepository;
-import femr.data.daos.core.IUserRepository;
+import femr.data.daos.core.*;
 import femr.data.models.core.*;
 import femr.data.models.mysql.BurnRate;
 import femr.util.calculations.dateUtils;
-import femr.util.stringhelpers.CSVParser;
+import femr.util.stringhelpers.CSVParserWrapper;
 import femr.util.stringhelpers.CSVWriterGson;
 import femr.util.stringhelpers.GsonFlattener;
-import femr.util.stringhelpers.InventoryCsv;
 import org.apache.commons.csv.CSVRecord;
 import org.ejml.simple.SimpleMatrix;
 import org.joda.time.DateTime;
 import play.Logger;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -62,7 +54,7 @@ public class InventoryService implements IInventoryService {
     private final IItemModelMapper itemModelMapper;
     private final IBurnRateRepository burnRateRepository;
     private final IPrescriptionRepository prescriptionRepository;
-    private final java.util.function.Supplier<io.ebean.Transaction> transactionFactory;
+    private final ICSVImportCacheRepository csvImportCacheRepository;
 
     @Inject
     public InventoryService(IMedicationRepository medicationRepository,
@@ -70,23 +62,17 @@ public class InventoryService implements IInventoryService {
                             IDataModelMapper dataModelMapper,
                             @Named("identified") IItemModelMapper itemModelMapper,
                             IBurnRateRepository burnRateRepository,
-                            IPrescriptionRepository prescriptionRepository
+                            IPrescriptionRepository prescriptionRepository,
+                            ICSVImportCacheRepository csvImportCacheRepository
     ) {
-        this(medicationRepository, userRepository, dataModelMapper, itemModelMapper,
-                burnRateRepository, prescriptionRepository, io.ebean.Ebean::beginTransaction);
-    }
 
-    InventoryService(IMedicationRepository medicationRepository, IUserRepository userRepository,
-                     IDataModelMapper dataModelMapper, IItemModelMapper itemModelMapper,
-                     IBurnRateRepository burnRateRepository, IPrescriptionRepository prescriptionRepository,
-                     java.util.function.Supplier<io.ebean.Transaction> transactionFactory) {
-        this.transactionFactory = transactionFactory;
         this.burnRateRepository = burnRateRepository;
         this.medicationRepository = medicationRepository;
         this.userRepository = userRepository;
         this.dataModelMapper = dataModelMapper;
         this.itemModelMapper = itemModelMapper;
         this.prescriptionRepository = prescriptionRepository;
+        this.csvImportCacheRepository = csvImportCacheRepository;
     }
 
 
@@ -384,210 +370,234 @@ public class InventoryService implements IInventoryService {
         }
 
 
+        // Convert export list to json
+        Gson gson = new Gson();
+        GsonFlattener parser = new GsonFlattener();
+        List<Map<String, String>> flatJson = parser.parse(gson.toJsonTree(inventoryExport).getAsJsonArray());
+
+
+        // Convert json to CSV
+        CSVWriterGson writer = new CSVWriterGson();
+        String csvString = writer.getAsCSV(flatJson, InventoryExportItem.getFieldOrder());
+
+
         ServiceResponse<String> response = new ServiceResponse<>();
-        try {
-            response.setResponseObject(InventoryCsv.write(inventoryExport));
-        } catch (java.io.IOException ex) {
-            response.addError("export", "Could not write the inventory file.");
-        }
+        response.setResponseObject(csvString.toString());
 
 
         return response;
     }
 
+    private boolean isMedicationValid(String medication) {
+        return (medication != null && !medication.isEmpty());
+    }
 
+    private boolean isQuantityValid(String quantity) {
+        try {
+            Integer.parseInt(quantity);
+            return true;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    public ServiceResponse<CSVImportItem> parseCSV(Object file) {
+        ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
+
+        long NUMBER_OF_ROWS_ADDED = 0; // Parse step adds no rows to the formulary
+        String ROW_SUBMIT_ERROR = null; // Parse set adds no rows to the formulary, thus submit errors should be null by default
+        ArrayList<CSVImportRowItem> csvImportRowItemsArrayList = new ArrayList<>();
+        ArrayList<String> csvFormatErrorsArrayList = new ArrayList<>();
+
+        // Clear the old cache of values
+        csvImportCacheRepository.clearCache();
+
+        File myObj = (File) file;
+        try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
+            String[] expectedHeaders = new String[] {"Medication", "Quantity"};
+            List<CSVRecord> records = CSVParserWrapper.parse(reader, expectedHeaders);
+
+            for (CSVRecord record : records) {
+                // Create the medication cell item
+                String medicationValue = record.get("Medication");
+                String medicationCellError = null;
+                if (!isMedicationValid(medicationValue)) {
+                    medicationCellError = "Invalid medication";
+                }
+                CSVImportCellItem medicationCellItem = itemModelMapper.createCSVImportCellItem(medicationValue, medicationCellError);
+
+                // Create the quantity cell item
+                String quantityValue = record.get("Quantity");
+                String quantityCellError = null;
+                if (!isQuantityValid(quantityValue)) {
+                    quantityCellError = "Invalid quantity";
+                }
+                CSVImportCellItem quantityCellItem = itemModelMapper.createCSVImportCellItem(quantityValue, quantityCellError);
+
+                // Create the row item
+                long recordNumber = record.getRecordNumber();
+                CSVImportRowItem rowItem = itemModelMapper.createCSVImportRowItem(
+                        recordNumber,
+                        medicationCellItem,
+                        quantityCellItem,
+                        ROW_SUBMIT_ERROR
+                );
+                csvImportRowItemsArrayList.add(rowItem);
+            }
+        } catch (IOException ex) {
+            // Any IOException's caught will come from the parsing step, highlight them as format errors
+            csvFormatErrorsArrayList.add(ex.getMessage());
+        }
+
+        // Cache the representations for each parsed row
+        csvImportCacheRepository.setCache(csvImportRowItemsArrayList);
+
+        // Final response object creation
+        ArrayList<CSVImportRowItem> csvImportRowItemsClientCopy = new ArrayList<>(csvImportRowItemsArrayList);
+        ArrayList<String> csvFormatErrorsClientCopy = new ArrayList<>(csvFormatErrorsArrayList);
+        CSVImportItem csvImportItem = itemModelMapper.createCSVImportItem(
+                NUMBER_OF_ROWS_ADDED,
+                csvImportRowItemsClientCopy,
+                csvFormatErrorsClientCopy
+        );
+        response.setResponseObject(csvImportItem);
+
+        return response;
+    }
+
+    public ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem) {
+        ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
+
+        long numberOfRowsAdded = 0;
+        ArrayList<String> CSV_FORMAT_ERRORS = new ArrayList<>(); // No parsing during submit, thus this will stay empty
+        HashMap<Long, CSVSubmitEditItem> edits = csvSubmitItem.getEdits();
+        HashSet<Long> deletions = csvSubmitItem.getDeletions();
+        List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
+        String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
+        Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
+        ArrayList<CSVImportRowItem> csvImportRowItemsRemainingArrayList = new ArrayList<>();
+
+        for (IMedicationInventory med : existentMedicationInventory) {
+            MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
+            // Full names of medications without ingredients or a form end in a space, but the parser trims all additional whitespace
+            iMedicationInventoryByFullname.put(medHelper.getFullName().trim(), med);
+        }
+
+        for (CSVImportRowItem rowItem : csvImportCacheRepository.getCache()) {
+            long recordNumber = rowItem.getRecordNumber();
+            if (deletions.contains(recordNumber)) {
+                continue;
+            }
+
+            CSVImportCellItem medicationCellItem = rowItem.getMedicationCellItem();
+            CSVImportCellItem quantityCellItem = rowItem.getQuantityCellItem();
+
+            // If edits are present, update the cached value(s)
+            if (edits.containsKey(recordNumber)) {
+                CSVSubmitEditItem csvSubmitEditItem = edits.get(recordNumber);
+
+                // Update the medication if the value is not null
+                String medicationValueEdit = csvSubmitEditItem.getMedication();
+                if (medicationValueEdit != null) {
+                    String medicationCellError = null;
+                    if (!isMedicationValid(medicationValueEdit)) {
+                        medicationCellError = "Invalid medication";
+                    }
+                    medicationCellItem.setValue(medicationValueEdit);
+                    medicationCellItem.setCellError(medicationCellError);
+                }
+
+                // Update the quantity if the value is not null
+                String quantityValueEdit = csvSubmitEditItem.getQuantity();
+                if (quantityValueEdit != null) {
+                    String quantityCellError = null;
+                    if (!isQuantityValid(quantityValueEdit)) {
+                        quantityCellError = "Invalid quantity";
+                    }
+                    quantityCellItem.setValue(quantityValueEdit);
+                    quantityCellItem.setCellError(quantityCellError);
+                }
+            }
+
+            // Validate there are no issues with the medication and quantity values before proceeding
+            if (medicationCellItem.getCellError() != null || quantityCellItem.getCellError() != null) {
+                rowItem.setRowSubmitError(null);
+                csvImportRowItemsRemainingArrayList.add(rowItem);
+                continue;
+            }
+
+            String medication = medicationCellItem.getValue();
+            int quantity = Integer.parseInt(quantityCellItem.getValue());
+
+            // TODO: Currently, if the medication name isn't an exact match, create a new entry. May want to update this later
+            IMedicationInventory entry = iMedicationInventoryByFullname.get(medication);
+            boolean entryExists = (entry != null);
+            int medicationId = entryExists
+                    ? entry.getMedication().getId()
+                    : medicationRepository.createNewMedication(medication).getId();
+            DateTime timeAdded = entryExists
+                    ? quantity != 0
+                    ? DateTime.now()
+                    : entry.getTimeAdded()
+                    : DateTime.now();
+
+            ServiceResponse<MedicationItem> medicationItemServiceResponse;
+            medicationItemServiceResponse = createOrUpdateMedicationInventory(
+                    medicationId,
+                    tripId,
+                    quantity,
+                    timeAdded,
+                    createdBy
+            );
+            if (medicationItemServiceResponse.hasErrors()) {
+                rowItem.setRowSubmitError(String.valueOf((medicationItemServiceResponse.getErrors().values())));
+                csvImportRowItemsRemainingArrayList.add(rowItem);
+                continue;
+            } else if (!entryExists) {
+                // Key by the CSV text so later rows with the same name update this entry instead of creating a duplicate medication
+                iMedicationInventoryByFullname.put(
+                        medication,
+                        medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
+                );
+            }
+            numberOfRowsAdded++;
+        }
+
+        // Cache the remaining rows that have yet to be submitted
+        csvImportCacheRepository.setCache(csvImportRowItemsRemainingArrayList);
+
+        // Final response object creation
+        ArrayList<CSVImportRowItem> csvImportRowItemsClientCopy = new ArrayList<>(csvImportRowItemsRemainingArrayList);
+        CSVImportItem csvImportItem = itemModelMapper.createCSVImportItem(
+                numberOfRowsAdded,
+                csvImportRowItemsClientCopy,
+                CSV_FORMAT_ERRORS
+        );
+        response.setResponseObject(csvImportItem);
+
+        return response;
+    }
 
     /**
      * {@inheritDoc}
      */
-
-    @Override
-    public ServiceResponse<List<InventoryImportPreviewItem>> createImportPreview(int tripId, Object file) {
-        ServiceResponse<List<InventoryImportPreviewItem>> response = new ServiceResponse<>();
-        List<? extends IMedicationInventory> inventories = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
-        Map<String, IMedicationInventory> byName = new HashMap<>();
-        Map<Integer, IMedicationInventory> byId = new HashMap<>();
-        for (IMedicationInventory inventory : inventories) {
-            MedicationItem item = itemModelMapper.createMedicationItem(inventory.getMedication(), inventory.getQuantityCurrent(), inventory.getQuantityInitial(), null, null, null);
-            byName.put(item.getFullName().trim(), inventory);
-            byId.put(inventory.getMedication().getId(), inventory);
-        }
-        try (BufferedReader reader = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
-            String header = reader.readLine();
-            if (header != null && header.startsWith("\uFEFF")) header = header.substring(1);
-            List<InventoryImportPreviewItem> preview = new ArrayList<>();
-            if ("Medication,Quantity".equals(header)) {
-                try (Reader rowsReader = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
-                    BufferedReader rows = (BufferedReader) rowsReader;
-                    rows.mark(1); if (rows.read() != '\uFEFF') rows.reset();
-                    for (CSVRecord record : CSVParser.parse(rows, new String[] {"Medication", "Quantity"})) {
-                        String name = record.get("Medication").trim();
-                        int delta = Integer.parseInt(record.get("Quantity"));
-                        IMedicationInventory existing = byName.get(name);
-                        MedicationItem item = new MedicationItem(); item.setFullName(name);
-                        preview.add(new InventoryImportPreviewItem(item, (int) record.getRecordNumber() + 1, delta, false,
-                                name, existing == null, existing == null ? null : existing.getQuantityCurrent(),
-                                existing == null ? delta : existing.getQuantityCurrent() + delta,
-                                existing == null ? null : existing.getQuantityInitial(),
-                                existing == null ? delta : existing.getQuantityInitial()));
-                    }
-                }
-            } else {
-                List<String> columns = header == null ? null : parseCsvLine(header);
-                if (columns == null || !columns.equals(InventoryExportItem.getFieldOrder())) {
-                    response.addError("csvValidation", "CSV headers do not match. Expected: Medication,Quantity. For exported inventory files, keep the original six column headers.");
-                    return response;
-                }
-                try (Reader rows = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
-                    for (InventoryCsv.Row row : InventoryCsv.read(rows)) {
-                        IMedicationInventory existing = byId.get(row.medicationId);
-                        MedicationItem item = new MedicationItem(); item.setId(row.medicationId); item.setFullName(row.medicationName);
-                        if (existing == null) item.setFullName(row.medicationName);
-                        preview.add(new InventoryImportPreviewItem(item, (int) row.number, null, true, row.medicationName,
-                                existing == null, existing == null ? null : existing.getQuantityCurrent(), row.quantity,
-                                existing == null ? null : existing.getQuantityInitial(), existing == null ? null : existing.getQuantityInitial()));
-                    }
-                }
-            }
-            validatePreview(tripId, preview, byName);
-            response.setResponseObject(preview);
-        } catch (NumberFormatException ex) {
-            response.addError("csvValidation", "A quantity must be a whole number within the supported range.");
-        } catch (Exception ex) {
-            response.addError("csvValidation", ex.getMessage());
-        }
-        return response;
-    }
-
-    @Override
-    public ServiceResponse<String> importPreview(int tripId, List<InventoryImportPreviewItem> preview, CurrentUser currentUser) {
-        ServiceResponse<String> response = new ServiceResponse<>();
-        List<? extends IMedicationInventory> inventories = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
-        Map<String, IMedicationInventory> byName = new HashMap<>();
-        for (IMedicationInventory inventory : inventories) {
-            MedicationItem item = itemModelMapper.createMedicationItem(inventory.getMedication(), 0, 0, null, null, null);
-            byName.put(item.getFullName().trim(), inventory);
-        }
-        validatePreview(tripId, preview, byName);
-        for (InventoryImportPreviewItem item : preview) if (item.hasErrors()) {
-            response.addError("validation", "Fix the highlighted preview rows before applying changes."); return response;
-        }
-        int added = 0, updated = 0;
-        try (io.ebean.Transaction transaction = transactionFactory.get()) {
-            for (InventoryImportPreviewItem item : preview) {
-                if (item.getRemoved()) continue;
-                IMedicationInventory existing = byName.get(item.getMedicationName());
-                if (existing == null) {
-                    IMedication medication = medicationRepository.createNewMedication(item.getMedicationName());
-                    existing = dataModelMapper.createMedicationInventory(item.getCurrentQuantityAfter(), item.getInitialQuantityAfter(), medication.getId(), tripId);
-                    added++;
-                } else {
-                    existing.setQuantityCurrent(item.getCurrentQuantityAfter());
-                    updated++;
-                }
-                existing.setTimeAdded(DateTime.now());
-                if (currentUser != null) existing.setCreatedBy(currentUser.getId());
-                if (medicationRepository.saveMedicationInventory(existing) == null) throw new IllegalStateException("Could not save " + item.getMedicationName());
-            }
-            transaction.commit();
-            response.setResponseObject(importSummary(added, updated));
-        } catch (Exception ex) { response.addError("database", "Inventory could not be saved. No quantities were changed."); }
-        return response;
-    }
-
-    private void validatePreview(int tripId, List<InventoryImportPreviewItem> preview, Map<String, IMedicationInventory> byName) {
-        Map<String, InventoryImportPreviewItem> names = new HashMap<>();
-        for (InventoryImportPreviewItem item : preview) {
-            item.clearErrors();
-            if (item.getRemoved()) continue;
-            String name = item.getMedicationName() == null ? "" : item.getMedicationName().trim();
-            if (name.isEmpty()) item.addError("medication", "Medication is required.");
-            else {
-                InventoryImportPreviewItem first = names.put(name, item);
-                if (first != null) {
-                    first.addError("medication", "Medication names must be unique in the preview.");
-                    item.addError("medication", "Medication names must be unique in the preview.");
-                }
-            }
-            if (item.getCurrentQuantityAfter() < 0) item.addError("quantity", "Final stored quantity cannot be negative.");
-            IMedicationInventory existing = byName.get(name);
-            item.setIsNew(existing == null);
-            item.setCurrentQuantityBefore(existing == null ? null : existing.getQuantityCurrent());
-            item.setInitialQuantityBefore(existing == null ? null : existing.getQuantityInitial());
-            item.setInitialQuantityAfter(existing == null ? item.getCurrentQuantityAfter() : existing.getQuantityInitial());
-        }
-    }
-
     @Override
     public ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser) {
-        ServiceResponse<String> response = new ServiceResponse<>();
-        try (java.io.BufferedReader reader = Files.newBufferedReader(((File) file).toPath(), StandardCharsets.UTF_8)) {
-            String header = reader.readLine();
-            if (header != null && header.startsWith("\uFEFF")) {
-                header = header.substring(1);
-            }
-            if ("Medication,Quantity".equals(header)) {
-                return importMedicationQuantityCSV(tripId, file, currentUser);
-            }
-            List<String> headerColumns;
-            try {
-                headerColumns = header == null ? null : parseCsvLine(header);
-            } catch (IllegalArgumentException ex) {
-                response.addError("csvValidation", "CSV headers could not be read. Check the column names and quotation marks.");
-                return response;
-            }
-            if (headerColumns != null && !headerColumns.equals(InventoryExportItem.getFieldOrder())) {
-                response.addError("csvValidation", "CSV headers do not match. Expected: Medication,Quantity. "
-                        + "For exported inventory files, keep the original six column headers.");
-                return response;
-            }
-            return importExportedInventoryCSV(tripId, file);
-        } catch (IOException ex) {
-            response.addError("file", "Could not read the inventory file.");
-            return response;
-        }
-    }
 
-    private ServiceResponse<String> importMedicationQuantityCSV(int tripId, Object file, CurrentUser currentUser) {
         ServiceResponse<String> response = new ServiceResponse<>();
+        List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
         Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
-        Set<Integer> addedMedications = new HashSet<>();
-        Set<Integer> updatedMedications = new HashSet<>();
+        String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
         File myObj = (File) file;
 
-        try (java.io.BufferedReader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
-            reader.mark(1);
-            if (reader.read() != '\uFEFF') reader.reset();
+        try (Reader reader = Files.newBufferedReader(myObj.toPath(), StandardCharsets.UTF_8)) {
             String[] expectedHeaders = new String[] {"Medication", "Quantity"};
-            List<CSVRecord> records = CSVParser.parse(reader, expectedHeaders);
-
-            // Validate every row before creating or updating medication inventory.
-            for (CSVRecord record : records) {
-                long rowNumber = record.getRecordNumber() + 1; // Include the header row.
-                if (!record.isSet("Medication") || !record.isSet("Quantity")
-                        || record.get("Medication").isEmpty() || record.get("Quantity").isEmpty()) {
-                    response.addError("csvValidation", "Row " + rowNumber
-                            + " is missing a medication or quantity. Each row must contain both columns and values.");
-                    return response;
-                }
-                try {
-                    Integer.parseInt(record.get("Quantity"));
-                } catch (NumberFormatException ex) {
-                    response.addError("csvValidation", "Row " + rowNumber
-                            + " has an invalid quantity. Enter a whole number within the supported range.");
-                    return response;
-                }
-            }
-            List<? extends IMedicationInventory> existentMedicationInventory =
-                    medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
-            String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
+            List<CSVRecord> records = CSVParserWrapper.parse(reader, expectedHeaders);
 
             for (IMedicationInventory med : existentMedicationInventory) {
                 MedicationItem medHelper = itemModelMapper.createMedicationItem(med.getMedication(), 0, 0, null, null, null);
-                // Full names of medications without ingredients or a form end in a space, but the parser trims CSV values
+                // Full names of medications without ingredients or a form end in a space, but the parser trims all additional whitespace
                 iMedicationInventoryByFullname.put(medHelper.getFullName().trim(), med);
-
-                Logger.debug(String.format("%d: %s", med.getId(), medHelper.getFullName()));
             }
 
             for (CSVRecord record : records) {
@@ -618,116 +628,23 @@ public class InventoryService implements IInventoryService {
                     if (medicationItemServiceResponse.hasErrors()) {
                         // TODO: Regroup on how to deal with errors for creating/updating the inventory
                         response.addError("", String.valueOf((medicationItemServiceResponse.getErrors().values())));
-                    } else {
-                        if (!entryExists) addedMedications.add(medicationId);
-                        else if (!addedMedications.contains(medicationId)) updatedMedications.add(medicationId);
-                        if (!entryExists) {
-                            // Repeated rows update this entry instead of creating another medication.
-                            iMedicationInventoryByFullname.put(
-                                    medication,
-                                    medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
-                            );
-                        }
+                    } else if (!entryExists) {
+                        // Key by the CSV text so later rows with the same name update this entry instead of creating a duplicate medication
+                        iMedicationInventoryByFullname.put(
+                                medication,
+                                medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
+                        );
                     }
                 } catch (NumberFormatException ex) {
+                    // TODO: Update the field of the error to be the row number (may have to update loop to standard for)
                     response.addError("", ex.getMessage());
                 }
-            }
-            if (!response.hasErrors()) {
-                response.setResponseObject(importSummary(addedMedications.size(), updatedMedications.size()));
             }
         } catch (IOException ex) {
             response.addError("", ex.getMessage());
         }
+
         return response;
-    }
-
-    private ServiceResponse<String> importExportedInventoryCSV(int tripId, Object file) {
-        ServiceResponse<String> response = new ServiceResponse<>();
-        try {
-            List<InventoryCsv.Row> rows;
-            try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(
-                    ((File) file).toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
-                rows = InventoryCsv.read(reader);
-            }
-            try (io.ebean.Transaction transaction = transactionFactory.get()) {
-                List<? extends IMedicationInventory> inventories =
-                        medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
-                Map<Integer, IMedicationInventory> byId = new HashMap<>();
-                for (IMedicationInventory inventory : inventories) {
-                    int id = inventory.getMedication().getId();
-                    if (byId.put(id, inventory) != null) {
-                        throw new IllegalArgumentException("Multiple inventory records exist for medication ID " + id + ".");
-                    }
-                }
-                // Resolve and validate every row before changing any database record.
-                for (InventoryCsv.Row row : rows) {
-                    IMedicationInventory inventory = byId.get(row.medicationId);
-                    if (inventory == null) {
-                        throw new IllegalArgumentException("Row " + row.number
-                                + ": medication ID " + row.medicationId + " is not in this trip's active inventory.");
-                    }
-                    String expectedName = itemModelMapper.createMedicationItem(
-                            inventory.getMedication(), 0, 0, null, null, null).getFullName();
-                    if (expectedName == null || !expectedName.trim().equals(row.medicationName)) {
-                        throw new IllegalArgumentException("Row " + row.number + ": Medication does not match ID "
-                                + row.medicationId + ". Export a fresh inventory file.");
-                    }
-                }
-                for (InventoryCsv.Row row : rows) {
-                    IMedicationInventory inventory = byId.get(row.medicationId);
-                    inventory.setQuantityCurrent(row.quantity);
-                    if (medicationRepository.saveMedicationInventory(inventory) == null) {
-                        throw new IllegalStateException("Could not save medication ID " + row.medicationId + ".");
-                    }
-                }
-                transaction.commit();
-            }
-            response.setResponseObject(importSummary(0, rows.size()));
-        } catch (IllegalArgumentException ex) {
-            response.addError("validation", ex.getMessage());
-        } catch (java.io.IOException ex) {
-            response.addError("file", "Could not read the inventory file. Check UTF-8 encoding and quoted fields.");
-        } catch (Exception ex) {
-            Logger.error("Inventory import failed", ex);
-            response.addError("database", "Inventory could not be saved. No quantities were changed.");
-        }
-        return response;
-    }
-
-    private String importSummary(int added, int updated) {
-        return "Import successful: " + added + " medication" + (added == 1 ? "" : "s")
-                + " added and " + updated + " " + (updated == 1 ? "medication" : "medications") + " updated.";
-    }
-
-    /** Parses one RFC 4180-style CSV record, including quoted commas and quotes. */
-    private List<String> parseCsvLine(String line) {
-        List<String> values = new ArrayList<>();
-        StringBuilder value = new StringBuilder();
-        boolean inQuotes = false;
-
-        for (int index = 0; index < line.length(); index++) {
-            char character = line.charAt(index);
-            if (character == '"') {
-                if (inQuotes && index + 1 < line.length() && line.charAt(index + 1) == '"') {
-                    value.append('"');
-                    index++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-            } else if (character == ',' && !inQuotes) {
-                values.add(value.toString());
-                value.setLength(0);
-            } else {
-                value.append(character);
-            }
-        }
-
-        if (inQuotes) {
-            throw new IllegalArgumentException("CSV row has an unclosed quoted value.");
-        }
-        values.add(value.toString());
-        return values;
     }
 
     public int sum(int[] arr){

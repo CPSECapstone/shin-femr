@@ -25,7 +25,6 @@ import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
-import femr.common.models.InventoryImportPreviewItem;
 import femr.data.models.mysql.Roles;
 import femr.ui.helpers.security.AllowedRoles;
 import femr.ui.helpers.security.FEMRAuthenticated;
@@ -33,7 +32,6 @@ import femr.ui.models.admin.inventory.*;
 import femr.ui.views.html.admin.inventory.custom;
 import femr.ui.views.html.admin.inventory.existing;
 import femr.ui.views.html.admin.inventory.manage;
-import femr.util.stringhelpers.FormularyCsvTemplate;
 import play.data.DynamicForm;
 import play.data.Form;
 import play.data.FormFactory;
@@ -46,16 +44,10 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Security.Authenticated(FEMRAuthenticated.class)
 @AllowedRoles({Roles.ADMINISTRATOR, Roles.SUPERUSER})
 public class InventoryController extends Controller {
-
-    private static final long PENDING_IMPORT_LIFETIME_MS = 30 * 60 * 1000;
-    private static final Map<String, PendingInventoryImport> pendingImports = new ConcurrentHashMap<>();
 
     private final AssetsFinder assetsFinder;
     private final FormFactory formFactory;
@@ -123,13 +115,6 @@ public class InventoryController extends Controller {
             } else {
 
                 viewModel.setMissionTripItem(missionTripServiceResponse.getResponseObject());
-            }
-
-            String previewToken = request().getQueryString("importPreview");
-            PendingInventoryImport pendingImport = getPendingImport(previewToken, retrieveTripID, currentUser.getId());
-            if (pendingImport != null) {
-                viewModel.setImportPreview(pendingImport.preview);
-                viewModel.setPendingImportToken(previewToken);
             }
 
             ServiceResponse<List<MissionTripItem>> missionTripListServiceResponse = missionTripService.retrieveAllTripInformationByUserId(currentUser.getId());
@@ -395,17 +380,13 @@ public class InventoryController extends Controller {
     public Result exportGet(int tripId) {
 
       ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
-      if (exportServiceResponse.hasErrors()) {
-          flash("error", "The inventory file could not be exported.");
-          return redirect("/admin/inventory/" + tripId);
-      }
 
       SimpleDateFormat format = new SimpleDateFormat("MMddyy-HHmmss");
       String timestamp = format.format(new Date());
       String csvFileName = "inventory-"+timestamp+".csv";
       response().setHeader("Content-disposition", "attachment; filename=" + csvFileName);
 
-      return ok(exportServiceResponse.getResponseObject()).as("text/csv; charset=utf-8");
+      return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
     }
 
 
@@ -420,146 +401,20 @@ public class InventoryController extends Controller {
 
         Http.MultipartFormData formData = request().body().asMultipartFormData();
 
-        if (formData == null || formData.getFiles().isEmpty()) {
-            System.out.println("CSV import failed: no file was uploaded.");
-            flash("error", "Please choose a CSV file to upload.");
-            return redirect("/admin/inventory/" + tripId);
-        }
-
         // ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
         Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
 
-        if (uploadedFile.getFilename() == null
-                || uploadedFile.getFilename().trim().isEmpty()) {
-            System.out.println("CSV import failed: no file was selected.");
-            flash("error", "Please choose a CSV file to upload.");
-            return redirect("/admin/inventory/" + tripId);
-        }
-
         CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
-
-        if (!uploadedFile.getFilename().toLowerCase(java.util.Locale.ROOT).endsWith(".csv")) {
-            flash("error", "Choose a comma-delimited .csv inventory file.");
-            return redirect("/admin/inventory/" + tripId);
-        }
 
         ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
 
-        if (!importServiceResponse.hasErrors()) {
-            flash("success", importServiceResponse.getResponseObject());
+        if (formData != null && !importServiceResponse.hasErrors()) {
             return redirect("/admin/inventory/" + tripId);
         } else {
             System.out.println("CSV import failed: "
                     + importServiceResponse.getErrors());
-            String validationMessage = importServiceResponse.getErrors().get("csvValidation");
-            flash("error", validationMessage != null ? validationMessage
-                    : String.join(" ", importServiceResponse.getErrors().values()));
             return redirect("/admin/inventory/" + tripId);
         }
-    }
-
-    /** Parses an uploaded CSV and shows changes without writing to the database. */
-    public Result previewCSVImport(int tripId) {
-        Http.MultipartFormData formData = request().body().asMultipartFormData();
-        if (formData == null || formData.getFiles().isEmpty()) return redirect("/admin/inventory/" + tripId);
-
-        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
-        Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
-        try {
-            // Parse once.  The resulting wrapped MedicationItems are retained for confirmation;
-            // the original upload is not reparsed after the user edits the preview.
-            ServiceResponse<List<InventoryImportPreviewItem>> previewResponse = inventoryService.createImportPreview(tripId, uploadedFile.getFile());
-            if (previewResponse.hasErrors()) {
-                flash("inventoryImportError", previewResponse.getErrors().toString());
-                return redirect("/admin/inventory/" + tripId);
-            }
-            List<InventoryImportPreviewItem> preview = previewResponse.getResponseObject();
-            preview.sort((left, right) -> Boolean.compare(right.hasErrors(), left.hasErrors()));
-            String token = UUID.randomUUID().toString();
-            pendingImports.put(token, new PendingInventoryImport(tripId, currentUser.getId(), preview));
-            removeExpiredPendingImports();
-            return redirect("/admin/inventory/" + tripId + "?importPreview=" + token);
-        } catch (Exception ex) {
-            flash("inventoryImportError", "Could not read the CSV file: " + ex.getMessage());
-            return redirect("/admin/inventory/" + tripId);
-        }
-    }
-
-    /** Applies the exact file reviewed by the current user. */
-    public Result confirmCSVImport(int tripId) {
-        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
-        String token = formFactory.form().bindFromRequest().get("pendingImportToken");
-        PendingInventoryImport pendingImport = getPendingImport(token, tripId, currentUser.getId());
-        if (pendingImport == null) {
-            flash("inventoryImportError", "This import preview has expired. Please upload the CSV again.");
-            return redirect("/admin/inventory/" + tripId);
-        }
-        updatePreviewFromRequest(pendingImport.preview);
-        ServiceResponse<String> response = inventoryService.importPreview(tripId, pendingImport.preview, currentUser);
-        if (response.hasErrors()) {
-            pendingImport.preview.sort((left, right) -> Boolean.compare(right.hasErrors(), left.hasErrors()));
-            flash("inventoryImportError", response.getErrors().toString());
-            return redirect("/admin/inventory/" + tripId + "?importPreview=" + token);
-        }
-        pendingImports.remove(token);
-        flash("inventoryImportSuccess", "Formulary changes were applied.");
-        return redirect("/admin/inventory/" + tripId);
-    }
-
-    public Result cancelCSVImport(int tripId) {
-        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
-        String token = formFactory.form().bindFromRequest().get("pendingImportToken");
-        PendingInventoryImport pendingImport = getPendingImport(token, tripId, currentUser.getId());
-        if (pendingImport != null) {
-            pendingImports.remove(token);
-        }
-        return redirect("/admin/inventory/" + tripId);
-    }
-
-    private PendingInventoryImport getPendingImport(String token, int tripId, int userId) {
-        if (token == null) return null;
-        PendingInventoryImport pendingImport = pendingImports.get(token);
-        if (pendingImport == null) return null;
-        if (pendingImport.expiresAt < System.currentTimeMillis()) {
-            pendingImports.remove(token, pendingImport);
-            return null;
-        }
-        return pendingImport.tripId == tripId && pendingImport.userId == userId ? pendingImport : null;
-    }
-
-    private void removeExpiredPendingImports() {
-        for (Map.Entry<String, PendingInventoryImport> entry : pendingImports.entrySet()) {
-            if (entry.getValue().expiresAt < System.currentTimeMillis()) pendingImports.remove(entry.getKey(), entry.getValue());
-        }
-    }
-
-    private void updatePreviewFromRequest(List<InventoryImportPreviewItem> preview) {
-        DynamicForm form = formFactory.form().bindFromRequest();
-        for (int index = 0; index < preview.size(); index++) {
-            InventoryImportPreviewItem item = preview.get(index);
-            String name = form.get("preview." + index + ".medication");
-            String quantity = form.get("preview." + index + ".quantity");
-            item.setRemoved("true".equals(form.get("preview." + index + ".removed")));
-            if (name != null) item.setMedicationName(name);
-            try { if (quantity != null) item.setCurrentQuantityAfter(Integer.parseInt(quantity)); }
-            catch (NumberFormatException ex) { item.setCurrentQuantityAfter(-1); }
-        }
-    }
-
-    private static class PendingInventoryImport {
-        private final int tripId; private final int userId;
-        private final long expiresAt; private final List<InventoryImportPreviewItem> preview;
-        private PendingInventoryImport(int tripId, int userId, List<InventoryImportPreviewItem> preview) {
-            this.tripId = tripId; this.userId = userId; this.preview = preview;
-            this.expiresAt = System.currentTimeMillis() + PENDING_IMPORT_LIFETIME_MS;
-        }
-    }
-    /**
-     * Downloads a starter file whose columns match the formulary CSV importer.
-     */
-    public Result downloadTemplateGet() {
-        response().setHeader("Content-disposition", "attachment; filename=formulary-template.csv");
-        return ok(FormularyCsvTemplate.getCsv()).as("text/csv");
     }
 
     /**

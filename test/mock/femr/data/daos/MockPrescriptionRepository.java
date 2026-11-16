@@ -86,8 +86,7 @@ public class MockPrescriptionRepository implements IPrescriptionRepository {
     }
 
     @Override
-    public List<? extends IPatientPrescription> retrieveAllPrescriptionsByMedicationId(
-            int med_id, DateTime startDT, DateTime endDT) {
+    public List<? extends IPatientPrescription> retrieveAllPrescriptionsByMedicationId(int med_id, DateTime startDT, DateTime endDT) {
         return Collections.emptyList();
     }
 }
