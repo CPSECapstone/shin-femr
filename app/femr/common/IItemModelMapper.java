@@ -24,6 +24,7 @@ import femr.data.models.mysql.InternetStatus;
 import org.joda.time.DateTime;
 import femr.data.models.mysql.MedicationInventory;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -37,6 +38,36 @@ public interface IItemModelMapper {
      * @return a new city item or null if processing fails
      */
     CityItem createCityItem(String cityName, String countryName);
+
+    /**
+     * Generate and provide an instance of CSVImportCellItem
+     *
+     * @param value the value in the cell, can be null
+     * @param cellError error message for the value in the cell, can be null
+     * @return a new CSVImportCellItem
+     */
+    CSVImportCellItem createCSVImportCellItem(String value, String cellError);
+
+    /**
+     * Generate and provide an instance of CSVImportRowItem
+     *
+     * @param recordNumber the record number this object corresponds to in the CSV file
+     * @param medicationCellItem data wrapping the cell value in the "Medication" column, not null
+     * @param quantityCellItem data wrapping the cell value in the "Quantity" column, not null
+     * @param rowSubmitError error message associated with submitting the row entry into the formulary, can be null
+     * @return a new CSVImportRowItem
+     */
+    CSVImportRowItem createCSVImportRowItem(long recordNumber, CSVImportCellItem medicationCellItem, CSVImportCellItem quantityCellItem, String rowSubmitError);
+
+    /**
+     * Generate and provide an instance of CSVImportItem
+     *
+     * @param numberOfRowsAdded the number of rows that have been successfully added to the formulary
+     * @param csvImportRowItems the details for each row that haven't been added to the formulary, not null
+     * @param csvFormatErrors any errors involving the format of the CSV file for importing, not null
+     * @return a new CSVImportItem
+     */
+    CSVImportItem createCSVImportItem(long numberOfRowsAdded, ArrayList<CSVImportRowItem> csvImportRowItems, ArrayList<String> csvFormatErrors);
 
     /**
      * Generate and provide an instance of MedicationAdministrationItem

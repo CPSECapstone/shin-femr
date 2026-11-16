@@ -5,6 +5,7 @@ import femr.common.models.*;
 import femr.data.models.core.*;
 import org.joda.time.DateTime;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -15,6 +16,21 @@ public class MockItemModelMapper implements IItemModelMapper{
 
     @Override
     public CityItem createCityItem(String cityName, String countryName) {
+        return null;
+    }
+
+    @Override
+    public CSVImportCellItem createCSVImportCellItem(String value, String cellError) {
+        return null;
+    }
+
+    @Override
+    public CSVImportRowItem createCSVImportRowItem(long recordNumber, CSVImportCellItem medicationCellItem, CSVImportCellItem quantityCellItem, String rowSubmitError) {
+        return null;
+    }
+
+    @Override
+    public CSVImportItem createCSVImportItem(long numberOfRowsAdded, ArrayList<CSVImportRowItem> csvImportRowItems, ArrayList<String> csvFormatErrors) {
         return null;
     }
 
