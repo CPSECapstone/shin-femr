@@ -4,6 +4,9 @@ import femr.business.services.core.*;
 import femr.business.services.system.InventoryImportHistoryService;
 import femr.common.dtos.*;
 import femr.common.models.MedicationItem;
+import femr.common.models.CSVImportItem;
+import femr.common.models.CSVImportRowItem;
+import femr.data.daos.core.ICSVImportCacheRepository;
 import org.junit.*;
 import org.mockito.ArgumentCaptor;
 import play.data.FormFactory;
@@ -27,6 +30,7 @@ public class InventoryImportHistoryControllerTest {
     private FormFactory forms;
     private CurrentUser user;
     private File upload;
+    private ICSVImportCacheRepository cache;
 
     @Before public void setup() {
         inventory = mock(IInventoryService.class);
@@ -36,7 +40,10 @@ public class InventoryImportHistoryControllerTest {
         when(user.getId()).thenReturn(7);
         when(sessions.retrieveCurrentUserSession()).thenReturn(user);
         forms = mock(FormFactory.class, RETURNS_DEEP_STUBS);
-        controller = new InventoryController(null, forms, null, inventory, null, null, sessions, history);
+        cache = mock(ICSVImportCacheRepository.class);
+        controller = spy(new InventoryController(null, forms, null, inventory, null, null, sessions, history, cache));
+        doAnswer(call -> play.mvc.Results.redirect("/preview?token=" + call.getArgument(3)))
+                .when(controller).renderPreviewPage(anyInt(), any(), any(), anyString());
         Http.Context context = mock(Http.Context.class);
         Http.Request request = mock(Http.Request.class);
         body = mock(Http.RequestBody.class);
@@ -70,41 +77,88 @@ public class InventoryImportHistoryControllerTest {
         assertEquals("Please choose a CSV file to upload.", flash.get("error"));
         verify(inventory, never()).importCSV(anyInt(), any(), any());
     }
-    @Test public void successfulUploadRecordsCountsAfterImport() throws Exception {
-        upload("Medication,Quantity\nDemo,10\n");
-        InventoryImportResponse success = new InventoryImportResponse();
-        success.complete(1, 2);
-        when(inventory.importCSV(eq(1), any(), eq(user))).thenReturn(success);
-        controller.importCSV(1);
-        org.mockito.InOrder order = inOrder(inventory, history);
-        order.verify(inventory).importCSV(eq(1), any(), eq(user));
-        order.verify(history).record(eq(1), eq(user), eq("demo.csv"), any(Instant.class), same(success));
-        assertEquals(success.getResponseObject(), flash.get("success"));
+    private String preview(String name) throws Exception {
+        upload("Medication,Quantity\n" + name + ",10\n");
+        CSVImportItem item = new CSVImportItem();
+        item.getCSVImportRowItems().add(new CSVImportRowItem());
+        ServiceResponse<CSVImportItem> parsed = new ServiceResponse<>();
+        parsed.setResponseObject(item);
+        when(inventory.parseCSV(any())).thenReturn(parsed);
+        return controller.parseCSV(1).redirectLocation().get().split("token=")[1];
     }
-    @Test public void failedUploadRecordsFailure() throws Exception {
-        upload("Medication,Quantity\nDemo,ten\n");
-        ServiceResponse<String> failure = new ServiceResponse<>();
-        failure.addError("csv", "Invalid quantity");
-        when(inventory.importCSV(eq(1), any(), eq(user))).thenReturn(failure);
-        controller.importCSV(1);
-        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(Instant.class), same(failure));
-        assertNull(flash.get("success"));
+    private void token(String value) {
+        when(forms.form().bindFromRequest().get("pendingImportToken")).thenReturn(value);
+        when(forms.form().bindFromRequest().data()).thenReturn(Collections.emptyMap());
     }
-    @Test public void unexpectedFailureIsRecorded() throws Exception {
-        upload("Medication,Quantity\nDemo,10\n");
-        when(inventory.importCSV(eq(1), any(), eq(user))).thenThrow(new IllegalArgumentException("bad row"));
-        controller.importCSV(1);
-        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(Instant.class), argThat(result -> result.hasErrors()));
-        assertNotNull(flash.get("error"));
+    private ServiceResponse<CSVImportItem> success() {
+        CSVImportItem item = new CSVImportItem();
+        item.setMedicationCounts(1, 2);
+        ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
+        response.setResponseObject(item);
+        return response;
     }
+    @Test public void previewDoesNotRecordSuccessAndSubmitOnlyAppliesOnce() throws Exception {
+        String id = preview("Demo");
+        verifyNoInteractions(history);
+        token(id);
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(success());
+        controller.submitCSV(1);
+        controller.submitCSV(1);
+        verify(inventory, times(1)).submitCSV(eq(1), eq(user), any());
+        verify(history, times(1)).record(eq(1), eq(user), eq("demo.csv"), any(),
+                argThat(result -> !result.hasErrors() && ((InventoryImportResponse) result).getAdded() == 1));
+    }
+    @Test public void canceledPreviewDoesNotWriteOrRecordSuccess() throws Exception {
+        token(preview("Demo"));
+        controller.cancelCSV(1);
+        controller.submitCSV(1);
+        verify(inventory, never()).submitCSV(anyInt(), any(), any());
+        verifyNoInteractions(history);
+    }
+    @Test public void otherUserCannotSubmitPreview() throws Exception {
+        token(preview("Demo"));
+        when(user.getId()).thenReturn(99);
+        controller.submitCSV(1);
+        verify(inventory, never()).submitCSV(anyInt(), any(), any());
+        verifyNoInteractions(history);
+    }
+    @Test public void otherTripCannotSubmitPreview() throws Exception {
+        token(preview("Demo"));
+        controller.submitCSV(2);
+        verify(inventory, never()).submitCSV(anyInt(), any(), any());
+    }
+    @Test public void remainingRowsRecordFailedAttemptAndCanBeRetried() throws Exception {
+        token(preview("Demo"));
+        ServiceResponse<CSVImportItem> partial = success();
+        partial.getResponseObject().getCSVImportRowItems().add(new CSVImportRowItem());
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(partial);
+        String next = controller.submitCSV(1).redirectLocation().get().split("token=")[1];
+        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(), argThat(result -> result.hasErrors()));
+        token(next);
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(success());
+        controller.submitCSV(1);
+        verify(history, times(2)).record(eq(1), eq(user), eq("demo.csv"), any(), any());
+    }
+    @Test public void laterUploadDoesNotReplaceEarlierPreviewRows() throws Exception {
+        String first = preview("First");
+        org.mockito.ArgumentCaptor<InventoryController.PendingPreview> captured =
+                org.mockito.ArgumentCaptor.forClass(InventoryController.PendingPreview.class);
+        verify(controller).renderPreviewPage(eq(1), eq(user), captured.capture(), anyString());
+        java.util.ArrayList<CSVImportRowItem> firstRows = captured.getValue().rows.getCSVImportRowItems();
+        Files.delete(upload.toPath());
+        preview("Second");
+        token(first);
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(success());
+        controller.submitCSV(1);
+        verify(cache).setCache(same(firstRows));
+    }
+
     @Test public void historyFailurePreservesSuccessfulResult() throws Exception {
-        upload("Medication,Quantity\nDemo,10\n");
-        InventoryImportResponse success = new InventoryImportResponse();
-        success.complete(1, 0);
-        when(inventory.importCSV(eq(1), any(), eq(user))).thenReturn(success);
+        token(preview("Demo"));
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(success());
         doThrow(new java.sql.SQLException("unavailable")).when(history).record(anyInt(), any(), anyString(), any(), any());
-        controller.importCSV(1);
-        assertEquals(success.getResponseObject(), flash.get("success"));
+        controller.submitCSV(1);
+        assertNotNull(flash.get("success"));
         assertNull(flash.get("error"));
         assertNotNull(flash.get("warning"));
     }

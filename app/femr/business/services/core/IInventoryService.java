@@ -21,6 +21,9 @@ package femr.business.services.core;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.MedicationItem;
+import femr.common.models.CSVImportItem;
+import femr.common.models.CSVSubmitItem;
+
 import femr.common.models.ShoppingListExportItem;
 import femr.data.models.core.IBurnRate;
 import org.joda.time.DateTime;
@@ -153,6 +156,14 @@ public interface IInventoryService {
      */
 
     ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser);
+
+    /** Parses an uploaded inventory CSV into editable rows without applying changes. */
+    ServiceResponse<CSVImportItem> parseCSV(Object file);
+
+    /** Applies edits and deletions to the rows produced by the most recent CSV parse. */
+    ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem);
+
+
 
     IBurnRate callPredictor(int medId,int tripId);
 

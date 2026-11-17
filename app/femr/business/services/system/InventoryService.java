@@ -402,6 +402,7 @@ public class InventoryService implements IInventoryService {
         }
     }
 
+    @Override
     public ServiceResponse<CSVImportItem> parseCSV(Object file) {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
@@ -466,10 +467,12 @@ public class InventoryService implements IInventoryService {
         return response;
     }
 
+    @Override
     public ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem) {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
         long numberOfRowsAdded = 0;
+        Set<Integer> added = new HashSet<>(), updated = new HashSet<>();
         ArrayList<String> CSV_FORMAT_ERRORS = new ArrayList<>(); // No parsing during submit, thus this will stay empty
         HashMap<Long, CSVSubmitEditItem> edits = csvSubmitItem.getEdits();
         HashSet<Long> deletions = csvSubmitItem.getDeletions();
@@ -561,6 +564,8 @@ public class InventoryService implements IInventoryService {
                         medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
                 );
             }
+            if (!entryExists) added.add(medicationId);
+            else if (!added.contains(medicationId)) updated.add(medicationId);
             numberOfRowsAdded++;
         }
 
@@ -574,6 +579,7 @@ public class InventoryService implements IInventoryService {
                 csvImportRowItemsClientCopy,
                 CSV_FORMAT_ERRORS
         );
+        csvImportItem.setMedicationCounts(added.size(), updated.size());
         response.setResponseObject(csvImportItem);
 
         return response;

@@ -116,6 +116,61 @@
 
 }
 
+.inventory-import-preview {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.inventory-import-preview__card {
+    width: min(960px, 100%);
+    max-height: calc(100vh - 3rem);
+    overflow: auto;
+    padding: 1.5rem;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+}
+
+.inventory-import-preview__new td { background-color: #e5f6e9 !important; }
+.inventory-import-preview__table .preview-medication,
+.inventory-import-preview__table .preview-quantity {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+.inventory-import-preview__table .preview-quantity {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+.inventory-import-preview__table .preview-quantity::-webkit-inner-spin-button,
+.inventory-import-preview__table .preview-quantity::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+.inventory-import-preview__table .preview-medication:focus,
+.inventory-import-preview__table .preview-quantity:focus {
+    outline: 1px solid #2f2f2f;
+    outline-offset: 2px;
+}
+.inventory-import-preview__error-row td { background-color: #fff5f5 !important; }
+.inventory-import-preview__invalid { border: 2px solid #c62828 !important; background: #ffebee !important; }
+.inventory-import-preview__error { display: block; color: #c62828; font-size: .85em; margin-top: .25rem; }
+.inventory-import-preview__removed { opacity: .5; text-decoration: line-through; }
+.inventory-import-preview__client-error { color: #c62828; min-height: 1.25em; }
+.inventory-import-preview__actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; }
+.inventory-import-preview__actions form { margin: 0; }
+
 #inventoryTable th{
 
     background-color: #2f2f2f;

@@ -11,7 +11,7 @@
             </div>
             <a class="admin-button admin-button--secondary" href="@InventoryController.manageGet(trip.getId)">Back to inventory</a>
         </div>
-        <p>Completed CSV import attempts, newest first. Successful imports appear after the inventory is saved. Failed imports may have applied some rows; check the inventory before retrying.</p>
+        <p>Completed CSV import attempts, newest first. Each submission is recorded after saving. Previewing or canceling alone does not create a successful entry. Failed imports may have applied some rows; check the inventory before retrying.</p>
         @if(items.isEmpty) {
             <p>No import history on this page. History is available for imports made after this feature was added.</p>
         } else {
