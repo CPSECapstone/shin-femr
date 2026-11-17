@@ -108,6 +108,18 @@ public class InventoryImportHistoryControllerTest {
         verify(history, times(1)).record(eq(1), eq(user), eq("demo.csv"), any(),
                 argThat(result -> !result.hasErrors() && ((InventoryImportResponse) result).getAdded() == 1));
     }
+    @Test public void removingEveryRowCancelsWithoutImportOrHistory() throws Exception {
+        token(preview("Demo"));
+        when(forms.form().bindFromRequest().data())
+                .thenReturn(Collections.singletonMap("preview.-1.removed", "true"));
+        Result result = controller.submitCSV(1);
+        assertEquals("/admin/inventory/1", result.redirectLocation().get());
+        verify(inventory, never()).submitCSV(anyInt(), any(), any());
+        verifyNoInteractions(history);
+        assertNull(flash.get("success"));
+        assertNull(flash.get("error"));
+    }
+
     @Test public void canceledPreviewDoesNotWriteOrRecordSuccess() throws Exception {
         token(preview("Demo"));
         controller.cancelCSV(1);

@@ -278,7 +278,7 @@
                         </div>
                         </form>
                         <div class="inventory-import-preview__actions">
-                            <form method="post" action="@InventoryController.cancelCSV(viewModel.getMissionTripItem.getId)"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button class="admin-button admin-button--secondary" type="submit">Cancel</button></form>
+                            <form id="inventoryImportCancelForm" method="post" action="@InventoryController.cancelCSV(viewModel.getMissionTripItem.getId)"><input type="hidden" name="pendingImportToken" value="@viewModel.getPendingImportToken" /><button class="admin-button admin-button--secondary" type="submit">Cancel</button></form>
                             @if(viewModel.getImportPreview.getCSVFormatErrors.isEmpty) {
                                 <button form="inventoryImportPreviewForm" type="submit" class="admin-button admin-button--primary preview-confirm">Submit rows</button>
                             }

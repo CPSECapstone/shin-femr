@@ -20,7 +20,7 @@
                     && number >= -2147483648 && number <= 2147483647;
             var medicationValid = medication.value.length > 0;
             updateField(medication, medicationValid, 'Medication name is required.');
-            updateField(quantity, quantityValid, 'Enter a whole number between -2147483648 and 2147483647.');
+            updateField(quantity, quantityValid, 'Please enter a valid whole number');
             // A save failure cannot be cleared by checking the field values in the browser.
             var saveError = row.querySelector('[data-preview-submit-error]');
             row.classList.toggle('inventory-import-preview__error-row',
@@ -41,6 +41,11 @@
                 input.value = removed ? 'true' : 'false';
                 row.classList.toggle('inventory-import-preview__removed', removed);
                 button.textContent = removed ? 'Restore' : 'Remove';
+                var hasRows = Array.from(form.querySelectorAll('.preview-removed-value'))
+                        .some(function (field) { return field.value !== 'true'; });
+                if (!hasRows) {
+                    document.getElementById('inventoryImportCancelForm').requestSubmit();
+                }
             });
         });
     }

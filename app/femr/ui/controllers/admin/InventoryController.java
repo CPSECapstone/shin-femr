@@ -568,6 +568,10 @@ public class InventoryController extends Controller {
             flash("error", "This preview has expired or was already submitted. Please upload the CSV again.");
             return redirect("/admin/inventory/" + tripId);
         }
+        // Removing every pending row is cancellation, not a successful zero-row import.
+        boolean hasRows = pending.rows.getCSVImportRowItems().stream()
+                .anyMatch(row -> !submitItem.getDeletions().contains(row.getRecordNumber()));
+        if (!hasRows) return redirect("/admin/inventory/" + tripId);
         try {
             ServiceResponse<CSVImportItem> response;
             synchronized (importCache) {
