@@ -169,7 +169,6 @@
                     </a>
 
 
-                    <a class="admin-button admin-button--secondary" href="@InventoryController.importHistoryGet(viewModel.getMissionTripItem.getId, 1)">Import History</a>
                     <form action="@InventoryController.parseCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
@@ -177,6 +176,10 @@
                             <input type="file" name="filename" accept=".csv" hidden onchange="this.form.submit()" />
                         </label>
                     </form>
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.importHistoryGet(viewModel.getMissionTripItem.getId, 1)">
+                        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+                        <span>Import History</span>
+                    </a>
 
                 </div>
             </div>
