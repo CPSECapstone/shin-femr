@@ -21,6 +21,8 @@ package femr.business.services.core;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.MedicationItem;
+import femr.common.models.CSVImportItem;
+import femr.common.models.CSVSubmitItem;
 import femr.common.models.InventoryImportPreviewItem;
 import femr.common.models.ShoppingListExportItem;
 import femr.data.models.core.IBurnRate;
@@ -155,11 +157,13 @@ public interface IInventoryService {
 
     ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser);
 
-    /** Parse a CSV once into editable preview rows. */
-    ServiceResponse<java.util.List<InventoryImportPreviewItem>> createImportPreview(int tripId, Object file);
+    /** Parses an uploaded inventory CSV into editable rows without applying changes. */
+    ServiceResponse<CSVImportItem> parseCSV(Object file);
 
-    /** Validate and apply the already-parsed preview rows. */
-    ServiceResponse<String> importPreview(int tripId, java.util.List<InventoryImportPreviewItem> preview, CurrentUser currentUser);
+    /** Applies edits and deletions to the rows produced by the most recent CSV parse. */
+    ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem);
+
+
 
     IBurnRate callPredictor(int medId,int tripId);
 

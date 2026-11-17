@@ -18,8 +18,10 @@
 */
 package femr.ui.models.admin.inventory;
 
+import femr.common.models.CSVImportItem;
 import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
+import femr.common.models.InventoryImportPreviewItem;
 
 import java.util.List;
 
@@ -31,6 +33,8 @@ public class ManageViewModelGet {
     //trip information
     private MissionTripItem missionTripItem;
     private List<MissionTripItem> missionTripList;
+    private CSVImportItem importPreview;
+    private String pendingImportToken;
 
     public List<MissionTripItem> getMissionTripList() { return missionTripList;}
 
@@ -69,6 +73,11 @@ public class ManageViewModelGet {
     public void setMissionTripItem(MissionTripItem missionTripItem) {
         this.missionTripItem = missionTripItem;
     }
+
+    public CSVImportItem getImportPreview() { return importPreview; }
+    public void setImportPreview(CSVImportItem importPreview) { this.importPreview = importPreview; }
+    public String getPendingImportToken() { return pendingImportToken; }
+    public void setPendingImportToken(String pendingImportToken) { this.pendingImportToken = pendingImportToken; }
 
     public List<MedicationItem> getConceptMedications() {
         return conceptMedications;

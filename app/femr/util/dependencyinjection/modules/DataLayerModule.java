@@ -19,6 +19,7 @@
 package femr.util.dependencyinjection.modules;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Scopes;
 import com.google.inject.TypeLiteral;
 import femr.data.daos.core.*;
 import femr.data.daos.system.*;
@@ -86,6 +87,7 @@ public class DataLayerModule extends AbstractModule {
         bind(IBurnRateRepository.class).to(BurnRateRepository.class);
         bind(IInternetStatusRepository.class).to(InternetStatusRepository.class);
         bind(IDailyReportRepository.class).to(DailyReportRepository.class);
+        bind(ICSVImportCacheRepository.class).to(CSVImportCacheRepository.class).in(Scopes.SINGLETON);
 
         // Research
         bind(IResearchEncounter.class).toProvider(ResearchEncounterProvider.class);
