@@ -142,12 +142,14 @@
 .inventory-import-preview__table .preview-quantity {
     width: 100%;
     min-width: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    box-sizing: border-box;
+    padding: .65rem 2.5rem .65rem .75rem;
+    border: 2px solid #aeb8c8;
+    border-radius: 8px;
+    background: #fff;
     color: inherit;
     font: inherit;
+    cursor: text;
 }
 .inventory-import-preview__table .preview-quantity {
     appearance: textfield;
@@ -160,9 +162,28 @@
 }
 .inventory-import-preview__table .preview-medication:focus,
 .inventory-import-preview__table .preview-quantity:focus {
-    outline: 1px solid #2f2f2f;
+    outline: 3px solid #3156bd;
     outline-offset: 2px;
+    border-color: #3156bd;
+    box-shadow: 0 0 0 4px #e8efff;
 }
+.inventory-import-preview__field { position: relative; display: block; }
+.inventory-import-preview__field > .material-symbols-outlined {
+    position: absolute;
+    right: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.15rem;
+    color: #52627a;
+    pointer-events: none;
+}
+.inventory-import-preview__field:focus-within > .material-symbols-outlined { color: #3156bd; }
+.inventory-import-preview__table th .material-symbols-outlined,
+.inventory-import-preview__hint .material-symbols-outlined {
+    font-size: 1rem;
+    vertical-align: middle;
+}
+.inventory-import-preview__table input:hover { border-color: #647795; }
 .inventory-import-preview__error-row td { background-color: #fff5f5 !important; }
 .inventory-import-preview__invalid { border: 2px solid #c62828 !important; background: #ffebee !important; }
 .inventory-import-preview__error { display: block; color: #c62828; font-size: .85em; margin-top: .25rem; }
