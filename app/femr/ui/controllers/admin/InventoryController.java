@@ -23,6 +23,10 @@ import controllers.AssetsFinder;
 import femr.business.services.core.*;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
+import femr.business.services.system.InventoryImportHistoryService;
+import femr.common.models.InventoryImportHistoryItem;
+import java.time.Instant;
+import play.Logger;
 import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
 import femr.data.models.mysql.Roles;
@@ -56,6 +60,7 @@ public class InventoryController extends Controller {
     private final IMedicationService medicationService;
     private final IMissionTripService missionTripService;
     private final ISessionService sessionService;
+    private final InventoryImportHistoryService importHistoryService;
 
     @Inject
     public InventoryController(AssetsFinder assetsFinder,
@@ -64,7 +69,7 @@ public class InventoryController extends Controller {
                                IInventoryService inventoryService,
                                IMedicationService medicationService,
                                IMissionTripService missionTripService,
-                               ISessionService sessionService) {
+                               ISessionService sessionService, InventoryImportHistoryService importHistoryService) {
 
         this.assetsFinder = assetsFinder;
         this.formFactory = formFactory;
@@ -73,6 +78,7 @@ public class InventoryController extends Controller {
         this.medicationService = medicationService;
         this.missionTripService = missionTripService;
         this.sessionService = sessionService;
+        this.importHistoryService = importHistoryService;
     }
 
     /**
@@ -397,24 +403,62 @@ public class InventoryController extends Controller {
      *               trip if they do not select another trip
      * @return Result of importing
      */
-    public Result importCSV(int tripId) {
+    private void recordImport(int tripId, CurrentUser user, String filename, Instant uploadedAt,
+                              ServiceResponse<String> result) {
+        try {
+            importHistoryService.record(tripId, user, filename, uploadedAt, result);
+        } catch (Exception ex) {
+            // An unavailable history store must not misreport or repeat a completed inventory write.
+            Logger.error("Could not save CSV import history", ex);
+            flash("warning", "The import result could not be saved to history. Check the inventory before uploading again.");
+        }
+    }
 
-        Http.MultipartFormData formData = request().body().asMultipartFormData();
-
-        // ServiceResponse<String> exportServiceResponse = inventoryService.exportCSV(tripId);
-        Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
-
-        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
-
-        ServiceResponse<String> importServiceResponse = inventoryService.importCSV(tripId,uploadedFile.getFile(),currentUser);
-
-        if (formData != null && !importServiceResponse.hasErrors()) {
-            return redirect("/admin/inventory/" + tripId);
-        } else {
-            System.out.println("CSV import failed: "
-                    + importServiceResponse.getErrors());
+    public Result importHistoryGet(int tripId, int page) {
+        if (page < 1 || page > 100000) return badRequest("Invalid history page.");
+        CurrentUser user = sessionService.retrieveCurrentUserSession();
+        ServiceResponse<MissionTripItem> trip = missionTripService.retrieveAllTripInformationByTripId(tripId);
+        if (trip.hasErrors() || trip.getResponseObject() == null) return notFound("Trip not found.");
+        try {
+            List<InventoryImportHistoryItem> items = importHistoryService.list(tripId, page);
+            boolean hasNext = items.size() > InventoryImportHistoryService.PAGE_SIZE;
+            if (hasNext) items = new ArrayList<>(items.subList(0, InventoryImportHistoryService.PAGE_SIZE));
+            return ok(femr.ui.views.html.admin.inventory.importHistory.render(
+                    user, trip.getResponseObject(), items, page, hasNext, assetsFinder));
+        } catch (Exception ex) {
+            Logger.error("Could not load CSV import history", ex);
+            flash("error", "Import history is temporarily unavailable. Please try again.");
             return redirect("/admin/inventory/" + tripId);
         }
+    }
+
+    public Result importCSV(int tripId) {
+        CurrentUser user = sessionService.retrieveCurrentUserSession();
+        Instant uploadedAt = Instant.now();
+        String filename = null;
+        ServiceResponse<String> result = new ServiceResponse<>();
+        try {
+            Http.MultipartFormData formData = request().body().asMultipartFormData();
+            Http.MultipartFormData.FilePart file = formData == null || formData.getFiles().isEmpty()
+                    ? null : (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
+            filename = file == null ? null : file.getFilename();
+            if (filename == null || filename.trim().isEmpty()) {
+                result.addError("file", "Please choose a CSV file to upload.");
+            } else {
+                result = inventoryService.importCSV(tripId, file.getFile(), user);
+            }
+        } catch (Exception ex) {
+            Logger.error("CSV import failed", ex);
+            result.addError("import", "The CSV could not be imported. Check the inventory before trying again.");
+        }
+        if (result.hasErrors()) {
+            Logger.warn("CSV import failed: " + result.getErrors());
+            flash("error", String.join(" ", result.getErrors().values()));
+        } else {
+            flash("success", result.getResponseObject());
+        }
+        recordImport(tripId, user, filename, uploadedAt, result);
+        return redirect("/admin/inventory/" + tripId);
     }
 
     /**

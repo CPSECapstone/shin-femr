@@ -93,6 +93,10 @@
 @admin("Inventory - Formulary", currentUser, styles = additionalStyles, scripts = additionalScripts, assets = assets) {
 
     @inventoryMenu(viewModel.getMissionTripItem)
+    @if(flash.containsKey("error")) {<div class="alert alert-danger" role="alert">@flash.get("error")</div>}
+    @if(flash.containsKey("success")) {<div class="alert alert-success" role="status">@flash.get("success")</div>}
+    @if(flash.containsKey("warning")) {<div class="alert alert-warning" role="alert">@flash.get("warning")</div>}
+
 
     @if(currentUser.getTripId != null && viewModel.getMissionTripItem != null) {
 
@@ -148,7 +152,8 @@
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
 
-                                        @* Import CSV: form is the outer element, label styled as a button *@
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.importHistoryGet(viewModel.getMissionTripItem.getId, 1)">Import History</a>
+                    @* Import CSV: form is the outer element, label styled as a button *@
                     <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>

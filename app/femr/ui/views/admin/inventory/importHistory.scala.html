@@ -1,0 +1,40 @@
+@(currentUser: femr.common.dtos.CurrentUser, trip: femr.common.models.MissionTripItem, items: java.util.List[femr.common.models.InventoryImportHistoryItem], page: Int, hasNext: Boolean, assets: AssetsFinder)
+@import femr.ui.controllers.admin.routes.InventoryController
+@import femr.ui.views.html.layouts.admin
+@styles = {<link rel="stylesheet" href="@assets.path("css/admin/inventory.css")">}
+@admin("Import History", currentUser, styles = styles, assets = assets) {
+    <section class="admin-section">
+        <div class="admin-section__header">
+            <div>
+                <h2 class="admin-section__title">Import History</h2>
+                <p class="admin-section__description">@trip.getFriendlyTripTitle</p>
+            </div>
+            <a class="admin-button admin-button--secondary" href="@InventoryController.manageGet(trip.getId)">Back to inventory</a>
+        </div>
+        <p>Completed CSV import attempts, newest first. Successful imports appear after the inventory is saved. Failed imports may have applied some rows; check the inventory before retrying.</p>
+        @if(items.isEmpty) {
+            <p>No import history on this page. History is available for imports made after this feature was added.</p>
+        } else {
+            <div class="admin-table-wrap">
+                <table class="admin-table">
+                    <thead><tr><th scope="col">Uploaded at</th><th scope="col">Uploaded by</th><th scope="col">Filename</th><th scope="col">Result</th><th scope="col">Added</th><th scope="col">Updated</th></tr></thead>
+                    <tbody>
+                    @for(item <- items) {
+                        <tr>
+                            <td>@item.getUploadedAt</td><td>@item.getUploadedBy</td><td>@item.getFilename</td>
+                            <td>@if(item.getSuccessful) {Successful} else {Failed}</td>
+                            <td>@if(item.getAdded != null) {@item.getAdded} else {—}</td>
+                            <td>@if(item.getUpdated != null) {@item.getUpdated} else {—}</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <nav aria-label="Import history pages" class="admin-section__actions">
+            @if(page > 1) {<a class="admin-button admin-button--secondary" href="@InventoryController.importHistoryGet(trip.getId, page - 1)">Previous</a>}
+            <span>Page @page</span>
+            @if(hasNext) {<a class="admin-button admin-button--secondary" href="@InventoryController.importHistoryGet(trip.getId, page + 1)">Next</a>}
+        </nav>
+    </section>
+}
