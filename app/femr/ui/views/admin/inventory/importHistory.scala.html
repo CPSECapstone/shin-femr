@@ -11,7 +11,7 @@
             </div>
             <a class="admin-button admin-button--secondary" href="@InventoryController.manageGet(trip.getId)">Back to inventory</a>
         </div>
-        <p>CSV submissions, newest first. Each submission records the medications saved during that attempt. Partially successful submissions saved some medications but left rows to correct. Canceling discards the remaining rows and does not undo medications already saved. Older failed entries without counts may also have saved rows.</p>
+        <p>CSV submissions, newest first. Each submission records the medications saved during that attempt. Partially successful submissions saved some medications but left rows to correct. Canceling discards the remaining rows and does not undo medications already saved.</p>
         @if(items.isEmpty) {
             <p>No import history on this page. History is available for imports made after this feature was added.</p>
         } else {
