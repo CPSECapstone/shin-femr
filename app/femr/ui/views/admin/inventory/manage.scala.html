@@ -18,6 +18,7 @@
         <script type = "text/javascript" src="@assets.path("js/libraries/jquery.dataTables.min.js")"></script>
         <script type="text/javascript" src="@assets.path("js/libraries/typeahead.bundle.min.js")"></script>
         <script type = "text/javascript" src="@assets.path("js/admin/inventory.js")"></script>
+        <script type="text/javascript" src="@assets.path("js/admin/inventory-import-preview.js")"></script>
         <script type="text/javascript">
         document.addEventListener('DOMContentLoaded', function() {
             fetch('@routes.Assets.versioned("json/languages.json")')
@@ -94,6 +95,18 @@
 
     @inventoryMenu(viewModel.getMissionTripItem)
 
+    @if(flash.containsKey("error")) {
+        <div class="alert alert-danger" role="alert">
+            @flash.get("error")
+        </div>
+    }
+
+    @if(flash.containsKey("success")) {
+        <div class="alert alert-success" role="status">
+            @flash.get("success")
+        </div>
+    }
+
     @if(currentUser.getTripId != null && viewModel.getMissionTripItem != null) {
 
         <section class="admin-section">
@@ -148,8 +161,13 @@
                         <span id="inv_manage_export_csv_btn">Export CSV</span>
                     </a>
 
-                                        @* Import CSV: form is the outer element, label styled as a button *@
-                    <form action="@InventoryController.importCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
+                    <a class="admin-button admin-button--secondary" href="@InventoryController.downloadTemplateGet().url">
+                        <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                        <span>Download template</span>
+                    </a>
+
+
+                    <form action="@InventoryController.parseCSV(viewModel.getMissionTripItem.getId).url" method="post" enctype="multipart/form-data">
                         <label class="admin-button admin-button--secondary">
                             <span class="material-symbols-outlined" aria-hidden="true">upload</span>
                             <span id="inv_manage_import_csv_btn">Import CSV</span>
@@ -221,6 +239,48 @@
                     </tbody>
                 </table>
             </div>
+
+            @if(viewModel.getImportPreview != null) {
+                <div class="inventory-import-preview" role="dialog" aria-modal="true" aria-labelledby="inventoryImportPreviewTitle">
+                    <div class="inventory-import-preview__card">
+                        <h2 id="inventoryImportPreviewTitle">Review formulary changes</h2>
+                        <p>Correct any highlighted values, remove rows you do not want to import, then submit the remaining rows.</p>
+                        @if(!viewModel.getImportPreview.getCSVFormatErrors.isEmpty) {
+                            <div class="alert alert-danger" role="alert">
+                                @for(error <- viewModel.getImportPreview.getCSVFormatErrors) { <div>@error</div> }
+                            </div>
+                        }
+                        <form id="inventoryImportPreviewForm" action="@InventoryController.submitCSV(viewModel.getMissionTripItem.getId).url" method="post">
+                        <div class="admin-table-wrap">
+                            <table class="admin-table inventory-import-preview__table">
+                                <thead><tr><th>Row</th><th>Medication</th><th>Quantity</th><th>Remove</th></tr></thead>
+                                <tbody>
+                                @for(index <- 0 until viewModel.getImportPreview.getCSVImportRowItems.size) {
+                                    @defining(viewModel.getImportPreview.getCSVImportRowItems.get(index)) { row =>
+                                    <tr class="@if(row.getMedicationCellItem.getCellError != null || row.getQuantityCellItem.getCellError != null || row.getRowSubmitError != null) {inventory-import-preview__error-row}" data-preview-row>
+                                        <td>@row.getRecordNumber</td>
+                                        <td><input class="preview-medication @if(row.getMedicationCellItem.getCellError != null) {inventory-import-preview__invalid}" name="preview.@{row.getRecordNumber}.medication" value="@row.getMedicationCellItem.getValue" aria-label="Medication" />
+                                            @if(row.getMedicationCellItem.getCellError != null) { <span class="inventory-import-preview__error">@row.getMedicationCellItem.getCellError</span> }</td>
+                                        <td><input class="preview-quantity @if(row.getQuantityCellItem.getCellError != null) {inventory-import-preview__invalid}" type="text" inputmode="numeric" name="preview.@{row.getRecordNumber}.quantity" value="@row.getQuantityCellItem.getValue" aria-label="Quantity" />
+                                            @if(row.getQuantityCellItem.getCellError != null) { <span class="inventory-import-preview__error">@row.getQuantityCellItem.getCellError</span> }
+                                            @if(row.getRowSubmitError != null) { <span class="inventory-import-preview__error">@row.getRowSubmitError</span> }</td>
+                                        <td><input type="hidden" class="preview-removed-value" name="preview.@{row.getRecordNumber}.removed" value="false" /><button type="button" class="admin-chip-button admin-chip-button--danger preview-remove">Remove</button></td>
+                                    </tr>
+                                    }
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                        </form>
+                        <div class="inventory-import-preview__actions">
+                            <a class="admin-button admin-button--secondary" href="@InventoryController.manageGet(viewModel.getMissionTripItem.getId).url">Cancel</a>
+                            @if(viewModel.getImportPreview.getCSVFormatErrors.isEmpty) {
+                                <button form="inventoryImportPreviewForm" type="submit" class="admin-button admin-button--primary preview-confirm">Submit rows</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
         </section>
     }
 }

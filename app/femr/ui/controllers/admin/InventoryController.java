@@ -25,6 +25,9 @@ import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
 import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
+import femr.common.models.CSVImportItem;
+import femr.common.models.CSVSubmitEditItem;
+import femr.common.models.CSVSubmitItem;
 import femr.data.models.mysql.Roles;
 import femr.ui.helpers.security.AllowedRoles;
 import femr.ui.helpers.security.FEMRAuthenticated;
@@ -43,7 +46,9 @@ import play.mvc.Security;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Security.Authenticated(FEMRAuthenticated.class)
 @AllowedRoles({Roles.ADMINISTRATOR, Roles.SUPERUSER})
@@ -85,7 +90,12 @@ public class InventoryController extends Controller {
      */
     public Result manageGet(Integer tripID) {
         CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
+        return ok(manage.render(currentUser, createManageViewModel(tripID, currentUser, null), assetsFinder));
+    }
+
+    private ManageViewModelGet createManageViewModel(Integer tripID, CurrentUser currentUser, CSVImportItem importPreview) {
         ManageViewModelGet viewModel = new ManageViewModelGet();
+        viewModel.setImportPreview(importPreview);
 
         // if tripID = 0 display the user's current trip
         // otherwise use the trip they have selected
@@ -131,7 +141,7 @@ public class InventoryController extends Controller {
             viewModel.setMissionTripList(new ArrayList<>());
         }
 
-        return ok(manage.render(currentUser, viewModel, assetsFinder));
+        return viewModel;
     }
 
     /**
@@ -389,6 +399,12 @@ public class InventoryController extends Controller {
       return ok(exportServiceResponse.getResponseObject()).as("application/x-download");
     }
 
+    /** Downloads a starter file whose columns match the inventory CSV parser. */
+    public Result downloadTemplateGet() {
+        response().setHeader("Content-disposition", "attachment; filename=inventory-template.csv");
+        return ok("Medication,Quantity\n").as("text/csv; charset=utf-8");
+    }
+
 
 
     /**
@@ -415,6 +431,67 @@ public class InventoryController extends Controller {
                     + importServiceResponse.getErrors());
             return redirect("/admin/inventory/" + tripId);
         }
+    }
+
+    /** Parses an uploaded CSV and renders it for review without applying changes. */
+    public Result parseCSV(int tripId) {
+        Http.MultipartFormData formData = request().body().asMultipartFormData();
+        if (formData == null || formData.getFiles().isEmpty()) {
+            flash("error", "Please choose a CSV file to upload.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+
+        Http.MultipartFormData.FilePart uploadedFile = (Http.MultipartFormData.FilePart) formData.getFiles().get(0);
+        ServiceResponse<CSVImportItem> response = inventoryService.parseCSV(uploadedFile.getFile());
+        if (response.hasErrors()) {
+            flash("error", String.join(" ", response.getErrors().values()));
+            return redirect("/admin/inventory/" + tripId);
+        }
+        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
+        return ok(manage.render(currentUser, createManageViewModel(tripId, currentUser, response.getResponseObject()), assetsFinder));
+    }
+
+    /** Applies the user's edits and deletions to the CSV rows currently held by the import cache. */
+    public Result submitCSV(int tripId) {
+        DynamicForm form = formFactory.form().bindFromRequest();
+        Map<Long, CSVSubmitEditItem> edits = new HashMap<>();
+        CSVSubmitItem submitItem = new CSVSubmitItem();
+
+        for (Map.Entry<String, String> entry : form.data().entrySet()) {
+            String[] field = entry.getKey().split("\\.");
+            if (field.length != 3 || !"preview".equals(field[0])) continue;
+            long recordNumber;
+            try {
+                recordNumber = Long.parseLong(field[1]);
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+
+            if ("removed".equals(field[2]) && "true".equals(entry.getValue())) {
+                submitItem.addToDeletions(recordNumber);
+                continue;
+            }
+            if ("medication".equals(field[2]) || "quantity".equals(field[2])) {
+                CSVSubmitEditItem edit = edits.computeIfAbsent(recordNumber, ignored -> new CSVSubmitEditItem());
+                if ("medication".equals(field[2])) edit.setMedication(entry.getValue());
+                else edit.setQuantity(entry.getValue());
+            }
+        }
+        edits.forEach(submitItem::addToEdits);
+
+        CurrentUser currentUser = sessionService.retrieveCurrentUserSession();
+        ServiceResponse<CSVImportItem> response = inventoryService.submitCSV(tripId, currentUser, submitItem);
+        if (response.hasErrors()) {
+            flash("error", String.join(" ", response.getErrors().values()));
+            return redirect("/admin/inventory/" + tripId);
+        }
+
+        CSVImportItem importPreview = response.getResponseObject();
+        if (importPreview.getCSVImportRowItems().isEmpty() && importPreview.getCSVFormatErrors().isEmpty()) {
+            flash("success", "Formulary changes were applied.");
+            return redirect("/admin/inventory/" + tripId);
+        }
+        return ok(manage.render(currentUser, createManageViewModel(tripId, currentUser, importPreview), assetsFinder));
     }
 
     /**

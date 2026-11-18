@@ -401,6 +401,7 @@ public class InventoryService implements IInventoryService {
         }
     }
 
+    @Override
     public ServiceResponse<CSVImportItem> parseCSV(Object file) {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
@@ -465,6 +466,7 @@ public class InventoryService implements IInventoryService {
         return response;
     }
 
+    @Override
     public ServiceResponse<CSVImportItem> submitCSV(int tripId, CurrentUser currentUser, CSVSubmitItem csvSubmitItem) {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
