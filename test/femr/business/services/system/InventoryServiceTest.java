@@ -178,6 +178,8 @@ public class InventoryServiceTest {
 
         CSVImportItem result = submitCSV(new CSVSubmitItem());
 
+        assertEquals(2, result.getMedicationsAdded());
+        assertEquals(0, result.getMedicationsUpdated());
         assertEquals(2, result.getNumberOfRowsAdded());
         assertTrue(result.getCSVImportRowItems().isEmpty());
         assertTrue(result.getCSVFormatErrors().isEmpty());
@@ -205,6 +207,8 @@ public class InventoryServiceTest {
 
         CSVImportItem result = submitCSV(new CSVSubmitItem());
 
+        assertEquals(0, result.getMedicationsAdded());
+        assertEquals(1, result.getMedicationsUpdated());
         assertEquals(1, result.getNumberOfRowsAdded());
         assertTrue(result.getCSVImportRowItems().isEmpty());
 
@@ -247,6 +251,8 @@ public class InventoryServiceTest {
 
         CSVImportItem result = submitCSV(new CSVSubmitItem());
 
+        assertEquals(1, result.getMedicationsAdded());
+        assertEquals(0, result.getMedicationsUpdated());
         assertEquals(2, result.getNumberOfRowsAdded());
         assertTrue(result.getCSVImportRowItems().isEmpty());
         verify(medicationRepository, times(1)).createNewMedication("Aspirin");

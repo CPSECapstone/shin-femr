@@ -25,6 +25,7 @@ import femr.business.services.core.IInventoryService;
 import femr.common.IItemModelMapper;
 import femr.common.dtos.CurrentUser;
 import femr.common.dtos.ServiceResponse;
+import femr.common.dtos.InventoryImportResponse;
 import femr.common.models.*;
 import femr.data.IDataModelMapper;
 import femr.data.daos.core.*;
@@ -471,6 +472,7 @@ public class InventoryService implements IInventoryService {
         ServiceResponse<CSVImportItem> response = new ServiceResponse<>();
 
         long numberOfRowsAdded = 0;
+        Set<Integer> added = new HashSet<>(), updated = new HashSet<>();
         ArrayList<String> CSV_FORMAT_ERRORS = new ArrayList<>(); // No parsing during submit, thus this will stay empty
         HashMap<Long, CSVSubmitEditItem> edits = csvSubmitItem.getEdits();
         HashSet<Long> deletions = csvSubmitItem.getDeletions();
@@ -562,6 +564,8 @@ public class InventoryService implements IInventoryService {
                         medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
                 );
             }
+            if (!entryExists) added.add(medicationId);
+            else if (!added.contains(medicationId)) updated.add(medicationId);
             numberOfRowsAdded++;
         }
 
@@ -575,6 +579,7 @@ public class InventoryService implements IInventoryService {
                 csvImportRowItemsClientCopy,
                 CSV_FORMAT_ERRORS
         );
+        csvImportItem.setMedicationCounts(added.size(), updated.size());
         response.setResponseObject(csvImportItem);
 
         return response;
@@ -586,7 +591,9 @@ public class InventoryService implements IInventoryService {
     @Override
     public ServiceResponse<String> importCSV(int tripId, Object file, CurrentUser currentUser) {
 
-        ServiceResponse<String> response = new ServiceResponse<>();
+        InventoryImportResponse response = new InventoryImportResponse();
+        Set<Integer> added = new HashSet<>();
+        Set<Integer> updated = new HashSet<>();
         List<? extends IMedicationInventory> existentMedicationInventory = medicationRepository.retrieveMedicationInventoriesByTripId(tripId, false);
         Map<String, IMedicationInventory> iMedicationInventoryByFullname = new HashMap<>();
         String createdBy = String.format("%s, %s", currentUser.getLastName(), currentUser.getFirstName());
@@ -630,12 +637,16 @@ public class InventoryService implements IInventoryService {
                     if (medicationItemServiceResponse.hasErrors()) {
                         // TODO: Regroup on how to deal with errors for creating/updating the inventory
                         response.addError("", String.valueOf((medicationItemServiceResponse.getErrors().values())));
-                    } else if (!entryExists) {
-                        // Key by the CSV text so later rows with the same name update this entry instead of creating a duplicate medication
-                        iMedicationInventoryByFullname.put(
-                                medication,
-                                medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
-                        );
+                    } else {
+                        if (!entryExists) added.add(medicationId);
+                        else if (!added.contains(medicationId)) updated.add(medicationId);
+                        if (!entryExists) {
+                            // Later rows with this name update the same medication.
+                            iMedicationInventoryByFullname.put(
+                                    medication,
+                                    medicationRepository.retrieveMedicationInventoryByMedicationIdAndTripId(medicationId, tripId)
+                            );
+                        }
                     }
                 } catch (NumberFormatException ex) {
                     // TODO: Update the field of the error to be the row number (may have to update loop to standard for)
@@ -646,6 +657,7 @@ public class InventoryService implements IInventoryService {
             response.addError("", ex.getMessage());
         }
 
+        if (!response.hasErrors()) response.complete(added.size(), updated.size());
         return response;
     }
 

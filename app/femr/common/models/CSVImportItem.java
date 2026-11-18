@@ -3,6 +3,10 @@ package femr.common.models;
 import java.util.ArrayList;
 
 public class CSVImportItem {
+    private int medicationsAdded, medicationsUpdated;
+    public int getMedicationsAdded() { return medicationsAdded; }
+    public int getMedicationsUpdated() { return medicationsUpdated; }
+    public void setMedicationCounts(int added, int updated) { medicationsAdded = added; medicationsUpdated = updated; }
     private long numberOfRowsAdded;
     private ArrayList<CSVImportRowItem> csvImportRowItems;
     private ArrayList<String> csvFormatErrors;

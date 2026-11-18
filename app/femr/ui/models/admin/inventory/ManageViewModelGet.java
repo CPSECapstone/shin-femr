@@ -21,7 +21,7 @@ package femr.ui.models.admin.inventory;
 import femr.common.models.CSVImportItem;
 import femr.common.models.MedicationItem;
 import femr.common.models.MissionTripItem;
-import femr.common.models.InventoryImportPreviewItem;
+
 
 import java.util.List;
 
