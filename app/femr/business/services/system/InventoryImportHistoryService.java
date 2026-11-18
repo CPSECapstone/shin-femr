@@ -32,8 +32,8 @@ public class InventoryImportHistoryService {
             statement.setString(4, filename(filename));
             statement.setTimestamp(5, Timestamp.from(uploadedAt));
             statement.setBoolean(6, successful);
-            statement.setObject(7, successful && counts != null ? counts.getAdded() : null, Types.INTEGER);
-            statement.setObject(8, successful && counts != null ? counts.getUpdated() : null, Types.INTEGER);
+            statement.setObject(7, counts != null ? counts.getAdded() : null, Types.INTEGER);
+            statement.setObject(8, counts != null ? counts.getUpdated() : null, Types.INTEGER);
             statement.executeUpdate();
         }
     }

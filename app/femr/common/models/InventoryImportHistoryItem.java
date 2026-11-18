@@ -22,6 +22,11 @@ public class InventoryImportHistoryItem {
                 .withZone(ZoneOffset.UTC).format(uploadedAt.toInstant());
     }
     public boolean getSuccessful() { return successful; }
+    public String getOutcome() {
+        if (successful) return "Successful";
+        if ((added != null && added > 0) || (updated != null && updated > 0)) return "Partially successful";
+        return "Failed";
+    }
     public Integer getAdded() { return added; }
     public Integer getUpdated() { return updated; }
 }

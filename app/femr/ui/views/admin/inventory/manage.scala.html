@@ -252,6 +252,12 @@
                         <h2 id="inventoryImportPreviewTitle">Review formulary changes before submitting</h2>
                         <p class="inventory-import-preview__hint"><span class="material-symbols-outlined" aria-hidden="true">edit</span> Medication and quantity can be edited. Click a bordered field to change it.</p>
                         <p>Edit medication names or quantities, remove unwanted rows, then submit. Valid rows are saved; rows with errors remain here for correction.</p>
+                        <p>Cancel discards the remaining rows. It does not undo medications already saved.</p>
+                        @if(viewModel.getImportPreview.getMedicationsAdded > 0 || viewModel.getImportPreview.getMedicationsUpdated > 0) {
+                            <div class="alert alert-info" role="status">
+                                Saved in the last submission: @viewModel.getImportPreview.getMedicationsAdded added and @viewModel.getImportPreview.getMedicationsUpdated updated. Correct or remove the remaining rows below.
+                            </div>
+                        }
                         @if(!viewModel.getImportPreview.getCSVFormatErrors.isEmpty) {
                             <div class="alert alert-danger" role="alert">
                                 @for(error <- viewModel.getImportPreview.getCSVFormatErrors) { <div>@error</div> }

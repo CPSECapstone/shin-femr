@@ -582,12 +582,13 @@ public class InventoryController extends Controller {
             }
             CSVImportItem remaining = response.getResponseObject();
             InventoryImportResponse result = new InventoryImportResponse();
+            if (remaining != null) {
+                result.complete(remaining.getMedicationsAdded(), remaining.getMedicationsUpdated());
+            }
             if (response.hasErrors() || remaining == null) {
                 result.addError("import", "The import could not be completed. Check the inventory before retrying.");
             } else if (!remaining.getCSVImportRowItems().isEmpty() || !remaining.getCSVFormatErrors().isEmpty()) {
                 result.addError("import", "Some rows were not imported. Correct the highlighted rows and submit again.");
-            } else {
-                result.complete(remaining.getMedicationsAdded(), remaining.getMedicationsUpdated());
             }
             recordImport(tripId, currentUser, pending.filename, pending.uploadedAt, result);
             if (!result.hasErrors()) {

@@ -11,7 +11,7 @@
             </div>
             <a class="admin-button admin-button--secondary" href="@InventoryController.manageGet(trip.getId)">Back to inventory</a>
         </div>
-        <p>Completed CSV import attempts, newest first. Each submission is recorded after saving. Previewing or canceling alone does not create a successful entry. Failed imports may have applied some rows; check the inventory before retrying.</p>
+        <p>CSV submissions, newest first. Each submission records the medications saved during that attempt. Partially successful submissions saved some medications but left rows to correct. Canceling discards the remaining rows and does not undo medications already saved. Older failed entries without counts may also have saved rows.</p>
         @if(items.isEmpty) {
             <p>No import history on this page. History is available for imports made after this feature was added.</p>
         } else {
@@ -22,7 +22,7 @@
                     @for(item <- items) {
                         <tr>
                             <td>@item.getUploadedAt</td><td>@item.getUploadedBy</td><td>@item.getFilename</td>
-                            <td>@if(item.getSuccessful) {Successful} else {Failed}</td>
+                            <td>@item.getOutcome</td>
                             <td>@if(item.getAdded != null) {@item.getAdded} else {—}</td>
                             <td>@if(item.getUpdated != null) {@item.getUpdated} else {—}</td>
                         </tr>

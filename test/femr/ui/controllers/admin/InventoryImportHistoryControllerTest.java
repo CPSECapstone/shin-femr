@@ -139,17 +139,41 @@ public class InventoryImportHistoryControllerTest {
         controller.submitCSV(2);
         verify(inventory, never()).submitCSV(anyInt(), any(), any());
     }
-    @Test public void remainingRowsRecordFailedAttemptAndCanBeRetried() throws Exception {
+    @Test public void remainingRowsKeepSavedCountsAndRetryRecordsOnlyItsOwnCounts() throws Exception {
         token(preview("Demo"));
         ServiceResponse<CSVImportItem> partial = success();
+        partial.getResponseObject().setMedicationCounts(0, 3);
         partial.getResponseObject().getCSVImportRowItems().add(new CSVImportRowItem());
         when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(partial);
         String next = controller.submitCSV(1).redirectLocation().get().split("token=")[1];
-        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(), argThat(result -> result.hasErrors()));
+        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(), argThat(result -> result.hasErrors()
+                && ((InventoryImportResponse) result).getAdded() == 0
+                && ((InventoryImportResponse) result).getUpdated() == 3));
+        assertNull(flash.get("success"));
         token(next);
-        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(success());
+        ServiceResponse<CSVImportItem> corrected = success();
+        corrected.getResponseObject().setMedicationCounts(0, 2);
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(corrected);
         controller.submitCSV(1);
+        controller.submitCSV(1); // Reusing a consumed token must not save or log twice.
         verify(history, times(2)).record(eq(1), eq(user), eq("demo.csv"), any(), any());
+        verify(history).record(eq(1), eq(user), eq("demo.csv"), any(), argThat(result -> !result.hasErrors()
+                && ((InventoryImportResponse) result).getUpdated() == 2));
+        verify(inventory, times(2)).submitCSV(eq(1), eq(user), any());
+    }
+    @Test public void cancelAfterPartialSubmissionPreservesRecordedCounts() throws Exception {
+        token(preview("Demo"));
+        ServiceResponse<CSVImportItem> partial = success();
+        partial.getResponseObject().setMedicationCounts(3, 0);
+        partial.getResponseObject().getCSVImportRowItems().add(new CSVImportRowItem());
+        when(inventory.submitCSV(eq(1), eq(user), any())).thenReturn(partial);
+        String next = controller.submitCSV(1).redirectLocation().get().split("token=")[1];
+        token(next);
+        controller.cancelCSV(1);
+        controller.submitCSV(1);
+        verify(inventory, times(1)).submitCSV(eq(1), eq(user), any());
+        verify(history, times(1)).record(eq(1), eq(user), eq("demo.csv"), any(), argThat(result -> result.hasErrors()
+                && ((InventoryImportResponse) result).getAdded() == 3));
     }
     @Test public void laterUploadDoesNotReplaceEarlierPreviewRows() throws Exception {
         String first = preview("First");

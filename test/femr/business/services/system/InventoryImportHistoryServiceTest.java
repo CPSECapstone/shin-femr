@@ -48,19 +48,40 @@ public class InventoryImportHistoryServiceTest {
         assertEquals("demo.csv", item.getFilename());
         assertEquals("2026-11-12 12:30 UTC", item.getUploadedAt());
         assertTrue(item.getSuccessful());
+        assertEquals("Successful", item.getOutcome());
         assertEquals(Integer.valueOf(2), item.getAdded());
         assertEquals(Integer.valueOf(3), item.getUpdated());
     }
-    @Test public void failureHasNoSuccessCounts() throws Exception {
+    @Test public void partialSubmissionKeepsSavedCounts() throws Exception {
         InventoryImportResponse result = new InventoryImportResponse();
         result.complete(2, 3);
         result.addError("import", "failed");
-        history.record(1, user, null, uploadedAt, result);
+        history.record(1, user, "partial.csv", uploadedAt, result);
         InventoryImportHistoryItem item = history.list(1, 1).get(0);
         assertFalse(item.getSuccessful());
+        assertEquals("Partially successful", item.getOutcome());
+        assertEquals(Integer.valueOf(2), item.getAdded());
+        assertEquals(Integer.valueOf(3), item.getUpdated());
+    }
+    @Test public void failureWithoutSavedCountsStaysFailed() throws Exception {
+        ServiceResponse<String> result = new ServiceResponse<>();
+        result.addError("import", "failed");
+        history.record(1, user, null, uploadedAt, result);
+        InventoryImportHistoryItem item = history.list(1, 1).get(0);
+        assertEquals("Failed", item.getOutcome());
         assertNull(item.getAdded());
         assertNull(item.getUpdated());
         assertEquals("No file selected", item.getFilename());
+    }
+    @Test public void zeroSavedMedicationsIsNotPartialSuccess() throws Exception {
+        InventoryImportResponse result = new InventoryImportResponse();
+        result.complete(0, 0);
+        result.addError("import", "invalid rows");
+        history.record(1, user, "invalid.csv", uploadedAt, result);
+        InventoryImportHistoryItem item = history.list(1, 1).get(0);
+        assertEquals("Failed", item.getOutcome());
+        assertEquals(Integer.valueOf(0), item.getAdded());
+        assertEquals(Integer.valueOf(0), item.getUpdated());
     }
     @Test public void filtersTripAndPaginatesNewestFirst() throws Exception {
         ServiceResponse<String> result = new ServiceResponse<>();
